@@ -2,8 +2,8 @@
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import (JSON, Column, DateTime, Float, ForeignKey, Integer, MetaData, String, Table, Text,
-                        create_engine, insert, select, update)
+from sqlalchemy import (JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, MetaData, String, Table, Text,
+                        create_engine, inspect, insert, select, text, update)
 
 from .config import DATABASE_URL
 
@@ -27,6 +27,7 @@ proveedores = Table(
     Column("comentario", Text, default=""),
     Column("creado", DateTime(timezone=True)),
     Column("revisado", DateTime(timezone=True)),
+    Column("es_prueba", Boolean, default=False),               # proveedor de prueba del superadministrador
 )
 
 envios = Table(
@@ -71,6 +72,19 @@ def ahora():
 
 def iniciar():
     meta.create_all(motor)
+    _migrar()
+
+
+def _migrar():
+    """Columnas agregadas después del primer despliegue (create_all no altera tablas existentes)."""
+    nuevas = {"proveedores": {"es_prueba": "BOOLEAN DEFAULT FALSE"}}
+    insp = inspect(motor)
+    with motor.begin() as c:
+        for tabla, columnas in nuevas.items():
+            existentes = {col["name"] for col in insp.get_columns(tabla)}
+            for nombre, tipo in columnas.items():
+                if nombre not in existentes:
+                    c.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}"))
 
 
 def registrar(actor: str, accion: str, detalle: str = "", ip: str = ""):

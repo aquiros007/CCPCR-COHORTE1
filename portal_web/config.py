@@ -40,3 +40,4 @@ ALMACEN = os.environ.get("ALMACEN", "drive" if DRIVE_FACTURAS_FOLDER_ID and _cre
 MAX_PDF_MB = float(os.environ.get("MAX_PDF_MB", "5"))
 MAX_XML_KB = float(os.environ.get("MAX_XML_KB", "500"))
 NOMBRE_PORTAL = os.environ.get("NOMBRE_PORTAL", "Portal de Proveedores")
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")   # enlace al dashboard de caja chica (solo lo ven administradores)

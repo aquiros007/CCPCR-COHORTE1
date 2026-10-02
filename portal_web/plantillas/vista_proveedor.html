@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titulo %}Vista proveedor{% endblock %}
+{% block contenido %}
+<h1>Vista proveedor</h1>
+<p class="sub">Como superadministrador puede ver el portal tal como lo ve un proveedor, o usarlo con un proveedor de prueba.</p>
+
+<div class="dos">
+  <section class="tarjeta">
+    <h2>Usar el portal como proveedor de prueba</h2>
+    <p class="sub">Registra y envía facturas de verdad con una cédula de prueba. Queda marcado como «Prueba» y nunca
+      pasa al agente de revisión. Las facturas que envíe deben haber sido emitidas con esta cédula.</p>
+    <form class="campos" method="post" action="/admin/proveedor-prueba">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="cedula">Cédula del proveedor de prueba
+        <input id="cedula" name="cedula" required inputmode="numeric" placeholder="3-101-456789" value="{{ prueba.cedula if prueba else '' }}"></label>
+      <label for="razon_social">Razón social
+        <input id="razon_social" name="razon_social" required maxlength="200" value="{{ prueba.razon_social if prueba else 'Proveedor de prueba' }}"></label>
+      <div class="acciones"><button type="submit">{{ 'Entrar como proveedor de prueba' if prueba else 'Crear y entrar como proveedor de prueba' }}</button></div>
+    </form>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Ver sin datos</h2>
+    <p class="sub">La pantalla que ve un proveedor recién registrado, con datos de ejemplo y sin poder enviar.</p>
+    <div class="acciones"><a class="boton sec" href="/admin/vista-proveedor/previa">Abrir vista previa</a></div>
+    <h2 class="separado">Ver como un proveedor real</h2>
+    {% if reales %}
+      <p class="sub">Solo lectura: ve sus datos y facturas, pero no puede enviar a su nombre.</p>
+      <ul class="lista">
+      {% for p in reales %}<li><a href="/admin/proveedor/{{ p.id }}">{{ p.razon_social }}</a> <span class="sub">{{ p.cedula }}</span></li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="sub">Todavía no hay proveedores registrados.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

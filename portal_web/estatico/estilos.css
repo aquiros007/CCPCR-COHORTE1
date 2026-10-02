@@ -75,3 +75,9 @@ form.decision { display: grid; gap: 6px; min-width: 220px; }
 .acciones select, .acciones input:not([type=hidden]) { width: auto; }
 .acciones h2 { margin: 0; margin-right: auto; }
 .ruta { font-size: 11px; color: var(--texto-3); word-break: break-word; }
+.selector { display: inline-flex; border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; }
+.selector form { display: contents; }
+.selector .opcion { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; border: 0; border-radius: 0; background: var(--superficie); color: var(--texto-2); text-decoration: none; cursor: pointer; }
+.selector .opcion.activa { background: var(--acento); color: var(--superficie); }
+.separado { margin-top: 18px; }
+ul.lista { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }

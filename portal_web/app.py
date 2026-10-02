@@ -57,7 +57,7 @@ def ver(request: Request, plantilla: str, **ctx):
     return plantillas.TemplateResponse(request, plantilla, {
         "csrf": token_csrf(request), "aviso": aviso, "portal": config.NOMBRE_PORTAL, "institucion": inst["nombre"],
         "cedula_inst": inst["cedula_juridica"], "estados": ESTADOS_ENVIO, "es_admin": request.session.get("rol") == "admin",
-        **ctx})
+        "modo_proveedor": request.session.get("modo") == "proveedor", "dashboard_url": config.DASHBOARD_URL, **ctx})
 
 
 def avisar(request: Request, texto: str, tipo: str = "exito"):
@@ -68,7 +68,11 @@ def proveedor_actual(request: Request) -> dict:
     pid = request.session.get("proveedor_id")
     p = db.uno(select(db.proveedores).where(db.proveedores.c.id == pid)) if pid else None
     if not p:
-        raise HTTPException(status_code=303, headers={"Location": "/ingresar"})
+        destino = "/admin/vista-proveedor" if request.session.get("rol") == "admin" else "/ingresar"
+        raise HTTPException(status_code=303, headers={"Location": destino})
+    # El superadministrador solo puede actuar como su proveedor de prueba, nunca como uno real
+    if request.session.get("rol") == "admin" and not p.get("es_prueba"):
+        raise HTTPException(status_code=403, detail="Solo puede actuar como el proveedor de prueba.")
     return p
 
 
@@ -249,12 +253,78 @@ async def enviar(request: Request, csrf: str = Form(""), pdf: UploadFile = File(
     return RedirectResponse("/proveedor", 303)
 
 
+# ------------------------------------------------------------------ vista proveedor del superadministrador
+
+EJEMPLO = {"id": 0, "cedula": "3-101-000000", "razon_social": "Proveedor de ejemplo S.A.", "nombre_comercial": "",
+           "correo": "facturacion@proveedor-ejemplo.cr", "telefono": "2222-0000", "estado": "Pendiente", "comentario": ""}
+
+
+def _correo_prueba(admin: str) -> str:
+    usuario, _, dominio = admin.partition("@")
+    return f"{usuario}+proveedor-prueba@{dominio}"
+
+
+@app.get("/admin/vista-proveedor", response_class=HTMLResponse)
+def admin_vista_proveedor(request: Request, admin: str = Depends(admin_actual)):
+    prueba = db.uno(select(db.proveedores).where(db.proveedores.c.correo == _correo_prueba(admin)))
+    reales = db.todos(select(db.proveedores).where(db.proveedores.c.es_prueba.isnot(True))
+                      .order_by(db.proveedores.c.razon_social))
+    return ver(request, "vista_proveedor.html", prueba=prueba, reales=reales)
+
+
+@app.get("/admin/vista-proveedor/previa", response_class=HTMLResponse)
+def admin_vista_previa(request: Request, admin: str = Depends(admin_actual)):
+    return ver(request, "proveedor.html", p=EJEMPLO, envios=[], solo_lectura=True, previa=True)
+
+
+@app.post("/admin/proveedor-prueba")
+def admin_proveedor_prueba(request: Request, csrf: str = Form(""), cedula: str = Form(...), razon_social: str = Form(...),
+                           admin: str = Depends(admin_actual)):
+    """Crea (o actualiza) el proveedor de prueba del superadministrador y entra al portal como él."""
+    validar_csrf(request, csrf)
+    import secrets
+    ced = re.sub(r"\D", "", cedula)
+    if not 9 <= len(ced) <= 12 or not razon_social.strip():
+        avisar(request, "Indique una cédula de 9 a 12 dígitos y la razón social del proveedor de prueba.", "error")
+        return RedirectResponse("/admin/vista-proveedor", 303)
+    otro = db.uno(select(db.proveedores).where((db.proveedores.c.cedula == ced) & (db.proveedores.c.es_prueba.isnot(True))))
+    if otro:
+        avisar(request, "Esa cédula pertenece a un proveedor real. Use otra para las pruebas.", "error")
+        return RedirectResponse("/admin/vista-proveedor", 303)
+    correo = _correo_prueba(admin)
+    previo = db.uno(select(db.proveedores).where(db.proveedores.c.correo == correo))
+    if previo:
+        db.ejecutar(update(db.proveedores).where(db.proveedores.c.id == previo["id"]).values(
+            cedula=ced, razon_social=razon_social.strip()[:200]))
+        pid = previo["id"]
+    else:
+        pid = db.ejecutar(insert(db.proveedores).values(
+            cedula=ced, razon_social=razon_social.strip()[:200], nombre_comercial="", correo=correo, telefono="",
+            password_hash="sin-ingreso-directo$" + secrets.token_hex(8), estado="Aprobado",
+            comentario="Proveedor de prueba del superadministrador.", creado=db.ahora(), es_prueba=True)).inserted_primary_key[0]
+    request.session["proveedor_id"] = pid
+    request.session["modo"] = "proveedor"
+    db.registrar(f"admin:{admin}", "modo_proveedor_prueba", f"{ced} {razon_social}", ip(request))
+    return RedirectResponse("/proveedor", 303)
+
+
+@app.post("/admin/volver")
+def admin_volver(request: Request, csrf: str = Form(""), admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    request.session.pop("proveedor_id", None)
+    request.session.pop("modo", None)
+    return RedirectResponse("/admin", 303)
+
+
 # ------------------------------------------------------------------ vista administrador
 
 @app.get("/admin", response_class=HTMLResponse)
 def vista_admin(request: Request, estado: str = "", admin: str = Depends(admin_actual)):
+    request.session.pop("modo", None)
+    request.session.pop("proveedor_id", None)
     provs = db.todos(select(db.proveedores).order_by(db.proveedores.c.creado.desc()))
-    consulta = select(db.envios, db.proveedores.c.razon_social).join(db.proveedores).order_by(db.envios.c.creado.desc())
+    consulta = select(db.envios, db.proveedores.c.razon_social, db.proveedores.c.es_prueba).join(db.proveedores) \
+        .order_by(db.envios.c.creado.desc())
     if estado:
         consulta = consulta.where(db.envios.c.estado == estado)
     envs = db.todos(consulta)
@@ -350,7 +420,8 @@ def admin_bitacora_csv(admin: str = Depends(admin_actual)):
 
 @app.get("/api/envios", dependencies=[Depends(api_autorizada)])
 def api_envios(estado: str = ""):
-    consulta = select(db.envios, db.proveedores.c.razon_social, db.proveedores.c.estado.label("estado_proveedor")).join(db.proveedores)
+    consulta = select(db.envios, db.proveedores.c.razon_social, db.proveedores.c.estado.label("estado_proveedor")).join(db.proveedores) \
+        .where(db.proveedores.c.es_prueba.isnot(True))   # el agente nunca recibe datos de prueba
     if estado:
         consulta = consulta.where(db.envios.c.estado == estado)
     return JSONResponse([{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in e.items()} for e in db.todos(consulta)])
@@ -359,7 +430,7 @@ def api_envios(estado: str = ""):
 @app.get("/api/proveedores", dependencies=[Depends(api_autorizada)])
 def api_proveedores():
     return JSONResponse([{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in p.items() if k != "password_hash"}
-                         for p in db.todos(select(db.proveedores))])
+                         for p in db.todos(select(db.proveedores).where(db.proveedores.c.es_prueba.isnot(True)))])
 
 
 @app.get("/api/envios/{eid}/archivo/{tipo}", dependencies=[Depends(api_autorizada)])

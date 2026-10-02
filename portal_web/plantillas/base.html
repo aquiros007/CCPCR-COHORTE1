@@ -12,8 +12,17 @@
     <div class="marca"><b>{{ portal }}</b><span>{{ institucion }} · comprobantes electrónicos para caja chica</span></div>
     <nav class="navegacion">
       {% if es_admin %}
-        <a href="/admin">Vista administrador</a>
+        <div class="selector" role="group" aria-label="Vista">
+          {% if modo_proveedor %}
+            <form method="post" action="/admin/volver"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="opcion">Vista administrador</button></form>
+            <span class="opcion activa" aria-current="page">Vista proveedor</span>
+          {% else %}
+            <a class="opcion {{ 'activa' if request.url.path.startswith('/admin') and not request.url.path.startswith('/admin/vista-proveedor') and not request.url.path.startswith('/admin/proveedor/') else '' }}" href="/admin">Vista administrador</a>
+            <a class="opcion {{ 'activa' if request.url.path.startswith('/admin/vista-proveedor') or request.url.path.startswith('/admin/proveedor/') else '' }}" href="/admin/vista-proveedor">Vista proveedor</a>
+          {% endif %}
+        </div>
         <a href="/admin/bitacora">Bitácora</a>
+        {% if dashboard_url %}<a href="{{ dashboard_url }}" target="_blank" rel="noopener">Dashboard de caja chica</a>{% endif %}
       {% endif %}
       {% if es_admin or request.session.get('proveedor_id') %}
         <form method="post" action="/salir"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec" type="submit">Salir</button></form>

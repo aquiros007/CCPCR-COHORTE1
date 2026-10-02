@@ -2,8 +2,12 @@
 {% from "_macros.html" import pill_envio, pill_cruce, pill_proveedor, controles, monto %}
 {% block titulo %}{{ p.razon_social }}{% endblock %}
 {% block contenido %}
-{% if solo_lectura %}
-<div class="franja">Está viendo el portal como lo ve <b>{{ p.razon_social }}</b>. Es solo lectura: no puede enviar facturas a su nombre. <a href="/admin">Volver a la vista administrador</a></div>
+{% if previa %}
+<div class="franja">Vista previa con datos de ejemplo: así ve el portal un proveedor recién registrado. <a href="/admin/vista-proveedor">Volver</a></div>
+{% elif solo_lectura %}
+<div class="franja">Está viendo el portal como lo ve <b>{{ p.razon_social }}</b>. Es solo lectura: no puede enviar facturas a su nombre. <a href="/admin/vista-proveedor">Volver</a></div>
+{% elif modo_proveedor %}
+<div class="franja">Está usando el portal como <b>proveedor de prueba</b>. Lo que envíe queda marcado como prueba y no pasa al agente de revisión.</div>
 {% endif %}
 
 <div class="dos">
@@ -28,7 +32,17 @@
   </section>
 </div>
 
-{% if not solo_lectura and p.estado != 'Rechazado' %}
+{% if previa %}
+<section class="tarjeta">
+  <h2>Enviar una factura</h2>
+  <form class="rejilla" aria-disabled="true">
+    <label>PDF de la factura<input type="file" disabled></label>
+    <label>XML de la factura electrónica<input type="file" disabled></label>
+    <label>XML de respuesta de Hacienda<input type="file" disabled></label>
+    <div class="acciones"><button type="button" disabled>Enviar a la Universidad</button></div>
+  </form>
+</section>
+{% elif not solo_lectura and p.estado != 'Rechazado' %}
 <section class="tarjeta">
   <h2>Enviar una factura</h2>
   <form class="rejilla" method="post" action="/proveedor/enviar" enctype="multipart/form-data">

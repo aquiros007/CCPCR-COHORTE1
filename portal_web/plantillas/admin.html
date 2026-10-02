@@ -21,8 +21,8 @@
     <tbody>
     {% for p in provs %}
       <tr>
-        <td><b>{{ p.razon_social }}</b>{% if p.nombre_comercial %}<div class="sub">{{ p.nombre_comercial }}</div>{% endif %}
-            <div><a href="/admin/proveedor/{{ p.id }}">Ver como este proveedor</a></div></td>
+        <td><b>{{ p.razon_social }}</b>{% if p.es_prueba %} <span class="pill">Prueba</span>{% endif %}{% if p.nombre_comercial %}<div class="sub">{{ p.nombre_comercial }}</div>{% endif %}
+            {% if not p.es_prueba %}<div><a href="/admin/proveedor/{{ p.id }}">Ver como este proveedor</a></div>{% endif %}</td>
         <td>{{ p.cedula }}</td>
         <td>{{ p.correo }}<div class="sub">{{ p.telefono }}</div></td>
         <td>{{ p.creado.strftime('%d/%m/%Y') if p.creado else '' }}</td>
@@ -61,7 +61,7 @@
     {% for e in envios %}
       <tr>
         <td>{{ e.creado.strftime('%d/%m/%Y %H:%M') if e.creado else '' }}</td>
-        <td><b>{{ e.razon_social }}</b><div class="sub">{{ e.emisor_cedula }}</div></td>
+        <td><b>{{ e.razon_social }}</b>{% if e.es_prueba %} <span class="pill">Prueba</span>{% endif %}<div class="sub">{{ e.emisor_cedula }}</div></td>
         <td>{{ e.consecutivo }}<div class="sub">Emitida {{ e.fecha_emision }}</div><div class="ruta">{{ e.carpeta }}</div></td>
         <td class="n">{{ monto(e.total) }}</td>
         <td>{{ e.hacienda }}</td>
