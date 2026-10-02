@@ -23,7 +23,7 @@ Google Drive.
  │                                                                                  │
  │  Personas encargadas (por FUC)          Proveedores                              │
  │  ─────────────────────────────          ───────────                              │
- │  Plantilla de liquidación o arqueo      Portal de proveedores (claude.ai)        │
+ │  Plantilla de liquidación o arqueo      Portal web de proveedores (Railway)      │
  │  (Excel o CSV) con:                       · registro: cédula, razón social       │
  │   · encabezado: FUC, tipo de trámite,     · por factura: PDF + XML +             │
  │     decisión inicial, estado de cuenta      respuesta de Hacienda                │
@@ -33,7 +33,7 @@ Google Drive.
  │                                           00_Registro · 01_PDF · 02_XML ·        │
  │                                           03_Respuesta_Hacienda                  │
  │                                                                                  │
- │            │                     portal ──► run.py importar-portal               │
+ │            │                     portal ──► run.py importar-web                  │
  │            ▼                                         ▼                           │
  │   repositorio/01_Entrada                repositorio/07_Proveedores               │
  └────────────┬─────────────────────────────────────────┬───────────────────────────┘
@@ -135,15 +135,16 @@ Google Drive.
 | `06_Informes` | Administración | Informe consolidado de incumplimientos de todas las unidades |
 | `07_Proveedores` | Proveedores | `00_Registro`, `01_PDF`, `02_XML`, `03_Respuesta_Hacienda`; el agente archiva en `04_Conciliados` |
 
-## Las dos páginas publicadas
+## Las páginas
 
 | Página | Quién la usa | Qué hace |
 |---|---|---|
+| **Portal web de proveedores** (Railway, `portal_web/`) | Proveedores externos; superadministrador | Aplicación propia con registro y contraseña: el proveedor envía PDF + XML + respuesta de Hacienda, el servidor los verifica al instante y los guarda en Google Drive (año, mes, proveedor, factura). El superadministrador aprueba registros, decide cada factura, descarga archivos, ve la bitácora y puede ver el portal como cualquier proveedor. Despliegue: [portal_web/DESPLIEGUE_RAILWAY.md](portal_web/DESPLIEGUE_RAILWAY.md). |
 | **Dashboard de revisión** | Revisores, jefaturas, auditoría | Exige registrarse (rol y motivo) antes de ver datos. Muestra gasto, hallazgos, entregas por unidad y arqueos; permite validar evidencia, decidir sobre comprobantes y confirmar que la información está al día. Dueño y editores ven la bitácora y la descargan. |
 | **Portal de proveedores** | Proveedores; dueño y editores con vista administrador | No lleva datos internos. El proveedor se registra y envía PDF + XML + respuesta con verificación inmediata, y ve el estado de cada factura. El administrador alterna a su vista: aprueba registros y descarga lo recibido. |
 
-Ambas páginas solo admiten escritura a personas de la organización con permiso de Colaborador. Para
-proveedores externos se necesita un portal propio con inicio de sesión (por ejemplo, Lovable + Supabase).
+El dashboard y el portal de claude.ai solo admiten escritura a personas de la organización con permiso de
+Colaborador; los proveedores externos usan el portal web de Railway.
 
 ## Qué revisa (Reglamento de Cajas Chicas de la UNA)
 
@@ -184,7 +185,8 @@ esos controles salen como NO SE PUEDE VERIFICAR.
 .venv/bin/python run.py resumen 7                 # datos del período para el análisis ejecutivo (JSON)
 .venv/bin/python run.py proveedores               # solo el cruce de comprobantes de 07_Proveedores
 .venv/bin/python run.py portal                    # genera el portal de proveedores
-.venv/bin/python run.py importar-portal <carpeta> # trae los envíos exportados del portal
+.venv/bin/python run.py importar-web              # trae las facturas nuevas del portal web (Railway)
+.venv/bin/python run.py importar-portal <carpeta> # trae los envíos exportados del portal de claude.ai
 .venv/bin/python run.py dashboard                 # solo regenera el dashboard
 .venv/bin/python run.py respaldo-pendiente        # qué falta respaldar en Drive y en qué carpeta
 .venv/bin/python run.py respaldo-local <carpeta>  # copia lo pendiente a Google Drive para escritorio

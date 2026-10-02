@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pill_envio, pill_cruce, pill_proveedor, controles, monto %}
+{% block titulo %}{{ p.razon_social }}{% endblock %}
+{% block contenido %}
+{% if solo_lectura %}
+<div class="franja">Está viendo el portal como lo ve <b>{{ p.razon_social }}</b>. Es solo lectura: no puede enviar facturas a su nombre. <a href="/admin">Volver a la vista administrador</a></div>
+{% endif %}
+
+<div class="dos">
+  <section class="tarjeta">
+    <h2>Mi registro</h2>
+    <dl class="datos">
+      <dt>Estado</dt><dd>{{ pill_proveedor(p.estado) }}{% if p.comentario %} · {{ p.comentario }}{% endif %}</dd>
+      <dt>Cédula</dt><dd>{{ p.cedula }}</dd>
+      <dt>Razón social</dt><dd>{{ p.razon_social }}</dd>
+      <dt>Correo</dt><dd>{{ p.correo }}</dd>
+      {% if p.telefono %}<dt>Teléfono</dt><dd>{{ p.telefono }}</dd>{% endif %}
+    </dl>
+  </section>
+  <section class="tarjeta">
+    <h2>Antes de enviar</h2>
+    <ul class="controles">
+      <li><span class="marca-ok">1</span><span>La factura debe estar a nombre de <b>{{ institucion }}</b>, cédula jurídica <b>{{ cedula_inst }}</b>.</span></li>
+      <li><span class="marca-ok">2</span><span>Suba los tres archivos de la misma factura: PDF, XML de la factura y XML de respuesta de Hacienda.</span></li>
+      <li><span class="marca-ok">3</span><span>Solo puede enviar facturas emitidas con su cédula. No se aceptan tiquetes electrónicos.</span></li>
+      <li><span class="marca-ok">4</span><span>El portal verifica al instante que los tres coincidan. La Universidad hace la revisión final y le informa aquí.</span></li>
+    </ul>
+  </section>
+</div>
+
+{% if not solo_lectura and p.estado != 'Rechazado' %}
+<section class="tarjeta">
+  <h2>Enviar una factura</h2>
+  <form class="rejilla" method="post" action="/proveedor/enviar" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="pdf">PDF de la factura<input id="pdf" name="pdf" type="file" accept="application/pdf,.pdf" required></label>
+    <label for="xml">XML de la factura electrónica<input id="xml" name="xml" type="file" accept=".xml,text/xml,application/xml" required></label>
+    <label for="respuesta">XML de respuesta de Hacienda<input id="respuesta" name="respuesta" type="file" accept=".xml,text/xml,application/xml" required></label>
+    <div class="acciones"><button type="submit">Enviar a la Universidad</button></div>
+  </form>
+</section>
+{% endif %}
+
+<section class="tarjeta">
+  <h2>Mis facturas</h2>
+  {% if envios %}
+  <div class="tabla"><table>
+    <thead><tr><th>Enviada</th><th>Factura</th><th>Emitida</th><th class="n">Total</th><th>Verificación</th><th>Estado</th></tr></thead>
+    <tbody>
+    {% for e in envios %}
+      <tr>
+        <td>{{ e.creado.strftime('%d/%m/%Y %H:%M') if e.creado else '' }}</td>
+        <td>{{ e.consecutivo }}</td>
+        <td>{{ e.fecha_emision }}</td>
+        <td class="n">{{ monto(e.total) }}</td>
+        <td>{{ pill_cruce(e.cruce) }}{{ controles(e.controles or []) }}</td>
+        <td>{{ pill_envio(e.estado, estados) }}{% if e.comentario %}<div class="sub">{{ e.comentario }}</div>{% endif %}
+            {% if e.estado == 'DEVUELTO' and not solo_lectura %}<div class="sub">Corrija y vuelva a enviar los tres archivos.</div>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}
+  <p class="sub">Todavía no hay facturas enviadas.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block titulo %}Bitácora{% endblock %}
+{% block contenido %}
+<div class="acciones"><h1>Bitácora del portal</h1><a class="boton sec" href="/admin/bitacora.csv">Descargar CSV completo</a></div>
+<p class="sub">Registros, ingresos (incluidos los fallidos), envíos y decisiones. Se muestran los últimos 500.</p>
+<section class="tarjeta">
+  <div class="tabla"><table>
+    <thead><tr><th>Fecha y hora (UTC)</th><th>Actor</th><th>Acción</th><th>Detalle</th><th>IP</th></tr></thead>
+    <tbody>
+    {% for f in filas %}
+      <tr><td>{{ f.ts.strftime('%d/%m/%Y %H:%M:%S') if f.ts else '' }}</td><td>{{ f.actor }}</td><td>{{ f.accion }}</td><td>{{ f.detalle }}</td><td>{{ f.ip }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+</section>
+{% endblock %}

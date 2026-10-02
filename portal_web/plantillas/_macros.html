@@ -1,0 +1,24 @@
+{% macro pill_envio(estado, estados) -%}
+<span class="pill {{ {'APROBADO': 'bien', 'RECHAZADO': 'critico'}.get(estado, 'alerta') }}">{{ estados.get(estado, estado) }}</span>
+{%- endmacro %}
+
+{% macro pill_cruce(cruce) -%}
+<span class="pill {{ {'LISTO PARA APROBACIÓN': 'bien', 'CON DIFERENCIAS': 'critico'}.get(cruce, 'alerta') }}">{{ cruce }}</span>
+{%- endmacro %}
+
+{% macro pill_proveedor(estado) -%}
+<span class="pill {{ {'Aprobado': 'bien', 'Rechazado': 'critico'}.get(estado, 'alerta') }}">{{ 'Pendiente de aprobación' if estado == 'Pendiente' else estado }}</span>
+{%- endmacro %}
+
+{% macro controles(lista) -%}
+{% set ok = lista | selectattr('estado', 'equalto', 'CUMPLE') | list | length %}
+<details><summary>{{ ok }} de {{ lista | length }} controles cumplen</summary>
+<ul class="controles">
+{% for c in lista %}
+  <li>{% if c.estado == 'CUMPLE' %}<span class="marca-ok" aria-label="Cumple">✓</span>{% elif c.estado == 'NO CUMPLE' %}<span class="marca-no" aria-label="No cumple">✗</span>{% else %}<span class="marca-nv" aria-label="No se puede verificar">?</span>{% endif %}
+    <span><b>{{ c.control }}</b>{% if c.detalle %} · {{ c.detalle }}{% endif %}</span></li>
+{% endfor %}
+</ul></details>
+{%- endmacro %}
+
+{% macro monto(n) -%}{% if n is not none %}₡{{ '{:,.2f}'.format(n) }}{% else %}—{% endif %}{%- endmacro %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titulo %}Registro de proveedor{% endblock %}
+{% block contenido %}
+<section class="tarjeta estrecha ancha">
+  <h1>Registro de proveedor</h1>
+  <p class="sub">Regístrese una sola vez. La Universidad revisa y aprueba su registro; mientras tanto ya puede enviar facturas.</p>
+  {% if error %}<div class="mensaje error" role="alert">{{ error }}</div>{% endif %}
+  <form class="rejilla" method="post" action="/registro">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="cedula">Cédula jurídica o física <span class="ayuda">La misma que aparece como emisor en sus facturas</span>
+      <input id="cedula" name="cedula" required inputmode="numeric" placeholder="3-101-123456" value="{{ datos.cedula or '' }}"></label>
+    <label for="razon_social">Razón social o nombre completo<input id="razon_social" name="razon_social" required maxlength="200" value="{{ datos.razon_social or '' }}"></label>
+    <label for="nombre_comercial">Nombre comercial <span class="ayuda">Opcional</span><input id="nombre_comercial" name="nombre_comercial" maxlength="200" value="{{ datos.nombre_comercial or '' }}"></label>
+    <label for="correo">Correo<input id="correo" name="correo" type="email" required autocomplete="email" value="{{ datos.correo or '' }}"></label>
+    <label for="telefono">Teléfono<input id="telefono" name="telefono" maxlength="40" value="{{ datos.telefono or '' }}"></label>
+    <span></span>
+    <label for="password">Contraseña <span class="ayuda">Mínimo 10 caracteres</span><input id="password" name="password" type="password" required minlength="10" autocomplete="new-password"></label>
+    <label for="password2">Repita la contraseña<input id="password2" name="password2" type="password" required minlength="10" autocomplete="new-password"></label>
+    <div class="acciones"><button type="submit">Registrarme</button><a href="/ingresar">Ya tengo cuenta</a></div>
+  </form>
+</section>
+{% endblock %}

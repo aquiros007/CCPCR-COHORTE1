@@ -60,8 +60,16 @@ def _txt(raiz, ruta):
 
 
 def leer_xml(ruta: Path) -> dict:
+    return leer_xml_bytes(ruta.read_bytes())
+
+
+def leer_xml_bytes(contenido: bytes) -> dict:
+    """Lee un XML de Hacienda desde bytes (archivo en disco o recibido por la web).
+    Rechaza DTD y entidades para evitar ataques de expansión de entidades."""
+    if b"<!DOCTYPE" in contenido[:2048].upper() or b"<!ENTITY" in contenido.upper():
+        return {"tipo": "ilegible", "error": "El XML trae declaraciones DTD/ENTITY, que no se aceptan."}
     try:
-        raiz = ET.parse(ruta).getroot()
+        raiz = ET.fromstring(contenido)
     except ET.ParseError as e:
         return {"tipo": "ilegible", "error": f"XML mal formado: {e}"}
     tipo = _local(raiz.tag)
@@ -105,15 +113,20 @@ def leer_xml(ruta: Path) -> dict:
 
 
 def leer_pdf(ruta: Path) -> dict:
+    return leer_pdf_bytes(ruta.read_bytes(), ruta.stem)
+
+
+def leer_pdf_bytes(contenido: bytes, nombre: str = "") -> dict:
     try:
+        import io
         from pypdf import PdfReader
-        texto_pdf = "\n".join((p.extract_text() or "") for p in PdfReader(ruta).pages)
+        texto_pdf = "\n".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(contenido)).pages[:10])
     except Exception as e:  # PDF dañado o protegido
         return {"tipo": "pdf", "texto": "", "error": f"No se pudo leer el PDF: {e}"}
     digitos = re.sub(r"\D", "", texto_pdf)
     claves = sorted(set(re.findall(r"506\d{47}", digitos)))
     # Clave también puede venir en el nombre del archivo
-    claves += [c for c in re.findall(r"506\d{47}", re.sub(r"\D", "", ruta.stem)) if c not in claves]
+    claves += [c for c in re.findall(r"506\d{47}", re.sub(r"\D", "", nombre)) if c not in claves]
     return {"tipo": "pdf", "texto": texto_pdf, "digitos": digitos, "claves": claves,
             "escaneado": len(texto_pdf.strip()) < 30}
 

@@ -5,6 +5,7 @@ Uso:
   python run.py iniciar      Crea las carpetas del repositorio y las plantillas
   python run.py procesar     Cruza comprobantes de proveedores, revisa todo lo de 01_Entrada y actualiza el dashboard
   python run.py portal       Genera el portal de proveedores (reportes/portal_proveedores.html)
+  python run.py importar-web Trae las facturas nuevas del portal web (Railway) y las marca "En revisión"
   python run.py importar-portal <carpeta>
                              Trae al repositorio los envíos exportados del portal (out_dir de ArtifactData)
   python run.py respaldo-pendiente        Lista (JSON) lo que falta respaldar en Google Drive y a qué subcarpeta
@@ -108,6 +109,13 @@ def main():
     elif comando == "portal":
         from cajachica.portal import generar_portal
         print("Portal:", generar_portal(RUTA_REPORTES / "portal_proveedores.html", politica))
+    elif comando == "importar-web":
+        from cajachica.portal_remoto import importar
+        db = BaseDatos(RUTA_DB)
+        res = importar(politica, db)
+        db.cerrar()
+        _dashboard(politica, rutas)
+        print(json.dumps(res, ensure_ascii=False, indent=2, default=str))
     elif comando == "importar-portal":
         from pathlib import Path
         from cajachica.comprobantes import procesar_comprobantes

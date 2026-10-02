@@ -15,3 +15,6 @@ reportes/
 repositorio/
 politicas/*
 !politicas/LEAME.md
+
+# Configuración local de Claude Code
+.claude/

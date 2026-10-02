@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pill_envio, pill_cruce, pill_proveedor, controles, monto %}
+{% block titulo %}Vista administrador{% endblock %}
+{% block contenido %}
+<h1>Vista administrador</h1>
+
+<div class="indicadores">
+  <div class="indicador"><div class="l">Proveedores registrados</div><div class="v">{{ kpis.proveedores }}</div></div>
+  <div class="indicador"><div class="l">Registros por aprobar</div><div class="v">{{ kpis.pendientes }}</div></div>
+  <div class="indicador"><div class="l">Facturas recibidas</div><div class="v">{{ kpis.envios }}</div></div>
+  <div class="indicador"><div class="l">Por decidir</div><div class="v">{{ kpis.por_decidir }}</div></div>
+  <div class="indicador"><div class="l">Con diferencias</div><div class="v">{{ kpis.con_diferencias }}</div></div>
+</div>
+{% if almacen != 'drive' %}<div class="franja">Los archivos se están guardando en el disco del servidor, no en Google Drive. Configure las variables de Google para enviarlos a "Caja Chica U".</div>{% endif %}
+
+<section class="tarjeta" id="proveedores">
+  <h2>Proveedores</h2>
+  {% if provs %}
+  <div class="tabla"><table>
+    <thead><tr><th>Proveedor</th><th>Cédula</th><th>Contacto</th><th>Registrado</th><th>Estado</th><th>Decisión</th></tr></thead>
+    <tbody>
+    {% for p in provs %}
+      <tr>
+        <td><b>{{ p.razon_social }}</b>{% if p.nombre_comercial %}<div class="sub">{{ p.nombre_comercial }}</div>{% endif %}
+            <div><a href="/admin/proveedor/{{ p.id }}">Ver como este proveedor</a></div></td>
+        <td>{{ p.cedula }}</td>
+        <td>{{ p.correo }}<div class="sub">{{ p.telefono }}</div></td>
+        <td>{{ p.creado.strftime('%d/%m/%Y') if p.creado else '' }}</td>
+        <td>{{ pill_proveedor(p.estado) }}{% if p.comentario %}<div class="sub">{{ p.comentario }}</div>{% endif %}</td>
+        <td>
+          <form class="decision" method="post" action="/admin/proveedor/{{ p.id }}/estado">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input name="comentario" placeholder="Comentario (opcional)" aria-label="Comentario">
+            <div class="acciones">
+              <button name="estado" value="Aprobado" type="submit">Aprobar</button>
+              <button name="estado" value="Rechazado" type="submit" class="sec">Rechazar</button>
+            </div>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}<p class="sub">Ningún proveedor se ha registrado todavía.</p>{% endif %}
+</section>
+
+<section class="tarjeta" id="envios">
+  <div class="acciones">
+    <h2>Facturas recibidas</h2>
+    <form method="get" action="/admin#envios" class="acciones">
+      <select name="estado" aria-label="Filtrar por estado">
+        <option value="">Todas</option>
+        {% for k, v in estados.items() %}<option value="{{ k }}" {{ 'selected' if filtro == k }}>{{ v }}</option>{% endfor %}
+      </select>
+      <button class="sec" type="submit">Filtrar</button>
+    </form>
+  </div>
+  {% if envios %}
+  <div class="tabla"><table>
+    <thead><tr><th>Recibida</th><th>Proveedor</th><th>Factura</th><th class="n">Total</th><th>Hacienda</th><th>Verificación</th><th>Archivos</th><th>Estado y decisión</th></tr></thead>
+    <tbody>
+    {% for e in envios %}
+      <tr>
+        <td>{{ e.creado.strftime('%d/%m/%Y %H:%M') if e.creado else '' }}</td>
+        <td><b>{{ e.razon_social }}</b><div class="sub">{{ e.emisor_cedula }}</div></td>
+        <td>{{ e.consecutivo }}<div class="sub">Emitida {{ e.fecha_emision }}</div><div class="ruta">{{ e.carpeta }}</div></td>
+        <td class="n">{{ monto(e.total) }}</td>
+        <td>{{ e.hacienda }}</td>
+        <td>{{ pill_cruce(e.cruce) }}{{ controles(e.controles or []) }}</td>
+        <td><a href="/admin/envio/{{ e.id }}/archivo/pdf">PDF</a> · <a href="/admin/envio/{{ e.id }}/archivo/factura">XML</a> · <a href="/admin/envio/{{ e.id }}/archivo/respuesta">Respuesta</a></td>
+        <td>
+          {{ pill_envio(e.estado, estados) }}{% if e.comentario %}<div class="sub">{{ e.comentario }}</div>{% endif %}
+          <form class="decision" method="post" action="/admin/envio/{{ e.id }}/estado">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <select name="estado" aria-label="Nuevo estado">
+              {% for k, v in estados.items() %}<option value="{{ k }}" {{ 'selected' if e.estado == k }}>{{ v }}</option>{% endfor %}
+            </select>
+            <input name="comentario" placeholder="Motivo (lo verá el proveedor)" aria-label="Motivo">
+            <button type="submit">Guardar decisión</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}<p class="sub">No hay facturas para el filtro.</p>{% endif %}
+</section>
+{% endblock %}

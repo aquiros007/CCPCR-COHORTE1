@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}{{ portal }}{% endblock %} · {{ institucion }}</title>
+<link rel="stylesheet" href="/estatico/estilos.css">
+</head>
+<body>
+<header class="barra">
+  <div class="envoltura">
+    <div class="marca"><b>{{ portal }}</b><span>{{ institucion }} · comprobantes electrónicos para caja chica</span></div>
+    <nav class="navegacion">
+      {% if es_admin %}
+        <a href="/admin">Vista administrador</a>
+        <a href="/admin/bitacora">Bitácora</a>
+      {% endif %}
+      {% if es_admin or request.session.get('proveedor_id') %}
+        <form method="post" action="/salir"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec" type="submit">Salir</button></form>
+      {% endif %}
+    </nav>
+  </div>
+</header>
+<main class="envoltura">
+  {% if aviso %}<div class="mensaje {{ aviso.tipo }}" role="status">{{ aviso.texto }}</div>{% endif %}
+  {% block contenido %}{% endblock %}
+</main>
+</body>
+</html>

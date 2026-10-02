@@ -74,7 +74,15 @@ Los juegos completos se archivan en `04_Conciliados/<mes>/<clave>/`. Las liquida
 estos XML (`XML_NO_COINCIDE`, `FACTURA_RECHAZADA_HACIENDA`). La firma digital solo se verifica como presente,
 no criptográficamente.
 
-### Portal de proveedores (`dashboard.portal_url`)
+### Portal web de proveedores externos (Railway, `portal_web/`)
+
+FastAPI + Postgres; los archivos van directo a Drive (`01_Facturas/<año>/<MM-Mes>/<cédula> <proveedor>/<n.º>/`).
+Variables en `portal_web/DESPLIEGUE_RAILWAY.md`. Para traer lo nuevo: `run.py importar-web` con
+`PORTAL_WEB_URL` y `PORTAL_API_TOKEN`; para devolverle al proveedor el resultado final usar
+`POST /api/envios/<id>/estado` ({estado: APROBADO | DEVUELTO | RECHAZADO, comentario}). Nunca escribir
+credenciales ni el token en el repositorio.
+
+### Portal de proveedores en claude.ai (`dashboard.portal_url`)
 
 Página aparte del dashboard (`cajachica/portal.py`, `run.py portal`): no lleva datos internos. El proveedor se
 registra y envía cada factura (PDF + XML + respuesta) con verificación inmediata en su navegador. Dueño y
