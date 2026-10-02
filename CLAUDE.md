@@ -153,6 +153,22 @@ incumplimientos de liquidación/arqueo y unidades sin entrega. Al presentarlo, a
   `clave_hallazgo()` de `cajachica/dashboard.py` y reportar hallazgos ALTA/MEDIA sin validar por unidad.
 - Quitar `dashboard.aviso` del yaml cuando se carguen datos reales.
 
+## Respaldo en Google Drive (carpeta "Caja Chica U")
+
+Ids de las carpetas en `config/respaldo_drive.json` (fuera de git; clave = ruta relativa, ej.
+`01_Facturas/2026/09-Septiembre`). Estructura: `01_Facturas/<AAAA>/<MM-Mes>/<cédula> <proveedor>/<número de
+factura>/` con `Factura_<n>.pdf`, `Factura_<n>.xml` y `Respuesta_Hacienda_<n>.xml` (mes = fecha de emisión),
+más `02_Proveedores` … `08_Base_de_Datos`. Mientras `dashboard.aviso` no esté vacío solo se respalda
+configuración y políticas (no se mezclan datos de demostración).
+
+Después de cada procesamiento:
+1. Exportar la bitácora (dashboard y portal) con ArtifactData `out_dir` y `run.py respaldo-bitacora <dir>`.
+2. Si Google Drive para escritorio está instalado: `run.py respaldo-local "<ruta local de Caja Chica U>"`.
+3. Si no: `run.py respaldo-pendiente` → crear en Drive las `carpetas_por_crear` (padre antes que hijo, guardar
+   cada id en `respaldo_drive.json`) → subir cada archivo con el conector (`disableConversionToGoogleType`) →
+   `run.py respaldo-registrar <json>` con {ruta, hash, drive_id, carpeta, nombre}. Verificar por hash con
+   `download_file_content` cuando el archivo sea binario. Al llegar un año nuevo, crear `<AAAA>` y sus 12 meses.
+
 ## Reglas de trabajo
 
 - No modificar hallazgos ni borrar registros de la BD sin que el usuario lo pida. Para cerrar un hallazgo:

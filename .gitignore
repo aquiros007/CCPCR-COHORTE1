@@ -9,6 +9,7 @@ config/politica.yaml
 config/Catalogo_Cajas.xlsx
 config/Catalogo_Cajas.csv
 config/Proveedores.xlsx
+config/respaldo_drive.json
 data/
 reportes/
 repositorio/

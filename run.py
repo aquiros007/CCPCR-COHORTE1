@@ -7,6 +7,10 @@ Uso:
   python run.py portal       Genera el portal de proveedores (reportes/portal_proveedores.html)
   python run.py importar-portal <carpeta>
                              Trae al repositorio los envíos exportados del portal (out_dir de ArtifactData)
+  python run.py respaldo-pendiente        Lista (JSON) lo que falta respaldar en Google Drive y a qué subcarpeta
+  python run.py respaldo-registrar <json> Marca como respaldados los archivos subidos ({ruta, hash, drive_id, ...})
+  python run.py respaldo-local <carpeta>  Copia lo pendiente a la carpeta de Google Drive para escritorio
+  python run.py respaldo-bitacora <dir>   Convierte la bitácora exportada (out_dir de ArtifactData) a CSV
   python run.py proveedores  Solo cruza los comprobantes de 07_Proveedores (PDF + XML + respuesta de Hacienda)
   python run.py dashboard    Regenera el dashboard desde la base de datos
   python run.py informe [días | desde hasta]
@@ -119,6 +123,29 @@ def main():
         db.cerrar()
         _dashboard(politica, rutas)
         print(json.dumps(res, ensure_ascii=False, indent=2, default=str))
+    elif comando.startswith("respaldo"):
+        from pathlib import Path
+        from cajachica import respaldo
+        db = BaseDatos(RUTA_DB)
+        if comando == "respaldo-pendiente":
+            res = respaldo.pendientes(politica, db)
+            ids = respaldo.cargar_ids()
+            res["carpetas_por_crear"] = respaldo.carpetas_faltantes(res["carpetas_necesarias"], ids)
+            res["carpetas_drive"] = ids
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+        elif comando == "respaldo-registrar":
+            subidos = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+            for x in subidos:
+                respaldo.registrar(db, x["ruta"], x["hash"], x["drive_id"], x["carpeta"], x["nombre"])
+            print(f"{len(subidos)} archivos registrados como respaldados.")
+        elif comando == "respaldo-local":
+            for p in respaldo.copiar_a_carpeta_local(politica, db, Path(sys.argv[2]).expanduser()):
+                print("Copiado:", p)
+        elif comando == "respaldo-bitacora":
+            from cajachica.bitacora import exportar_csv
+            for p in exportar_csv(Path(sys.argv[2])):
+                print("Bitácora:", p)
+        db.cerrar()
     elif comando == "dashboard":
         for p in _dashboard(politica, rutas):
             print("Dashboard:", p)
