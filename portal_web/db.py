@@ -55,6 +55,36 @@ envios = Table(
     Column("actualizado", DateTime(timezone=True)),
 )
 
+encargados = Table(                             # personas encargadas de caja chica (una o más FUC)
+    "encargados", meta,
+    Column("id", Integer, primary_key=True),
+    Column("correo", String(200), unique=True, nullable=False),
+    Column("nombre", String(200), default=""),
+    Column("fucs", String(400), default=""),                   # códigos separados por coma
+    Column("password_hash", String(300)),                      # vacío hasta que active su cuenta
+    Column("token_hash", String(100)),                         # enlace de activación (se guarda solo su hash)
+    Column("token_expira", DateTime(timezone=True)),
+    Column("activo", Boolean, default=True),
+    Column("creado", DateTime(timezone=True)),
+)
+
+entregas = Table(                               # liquidaciones y arqueos que suben las personas encargadas
+    "entregas", meta,
+    Column("id", Integer, primary_key=True),
+    Column("encargado_id", Integer, ForeignKey("encargados.id")),
+    Column("actor", String(200)),
+    Column("fuc", String(400)),
+    Column("archivo", String(300)),
+    Column("hash", String(64)),
+    Column("tipo", String(20)),                                # liquidacion / arqueo
+    Column("estado", String(20), default="RECIBIDO"),          # RECIBIDO / PROCESANDO / PROCESADO / RECHAZADO / ERROR
+    Column("resultado", JSON),
+    Column("revision", Text),                                  # ruta del Excel de revisión en el volumen
+    Column("mensaje", Text),
+    Column("creado", DateTime(timezone=True)),
+    Column("procesado", DateTime(timezone=True)),
+)
+
 tablero = Table(                                # paquete de datos que publica el agente de caja chica
     "tablero", meta,
     Column("id", Integer, primary_key=True),

@@ -1,12 +1,16 @@
 """Carga de la política y resolución de rutas del repositorio."""
+import os
 from pathlib import Path
 
 import yaml
 
 RAIZ = Path(__file__).resolve().parent.parent
-RUTA_POLITICA = RAIZ / "config" / "politica.yaml"
-RUTA_DB = RAIZ / "data" / "cajachica.db"
-RUTA_REPORTES = RAIZ / "reportes"
+# En Railway los datos viven en un volumen persistente (CAJACHICA_DATA_DIR=/data); en la Mac, en el proyecto.
+DATOS = Path(os.environ.get("CAJACHICA_DATA_DIR", str(RAIZ)))
+RUTA_CONFIG = DATOS / "config"
+RUTA_POLITICA = RUTA_CONFIG / "politica.yaml"
+RUTA_DB = DATOS / "data" / "cajachica.db"
+RUTA_REPORTES = DATOS / "reportes"
 
 SUBCARPETAS = {
     "plantillas": "00_Plantillas",
@@ -19,7 +23,7 @@ SUBCARPETAS = {
 }
 
 
-RUTA_POLITICA_EJEMPLO = RAIZ / "config" / "politica.ejemplo.yaml"
+RUTA_POLITICA_EJEMPLO = RAIZ / "config" / "politica.ejemplo.yaml"   # siempre la del código
 
 
 def cargar_politica(ruta: Path = RUTA_POLITICA) -> dict:
@@ -34,7 +38,7 @@ def cargar_politica(ruta: Path = RUTA_POLITICA) -> dict:
 
 def ruta_repositorio(politica: dict) -> Path:
     ruta = Path(str(politica.get("repositorio", "./repositorio"))).expanduser()
-    return ruta if ruta.is_absolute() else (RAIZ / ruta).resolve()
+    return ruta if ruta.is_absolute() else (DATOS / ruta).resolve()
 
 
 def carpetas(politica: dict, crear: bool = True) -> dict:
@@ -45,6 +49,7 @@ def carpetas(politica: dict, crear: bool = True) -> dict:
             ruta.mkdir(parents=True, exist_ok=True)
         RUTA_DB.parent.mkdir(parents=True, exist_ok=True)
         RUTA_REPORTES.mkdir(parents=True, exist_ok=True)
+        RUTA_CONFIG.mkdir(parents=True, exist_ok=True)
     return rutas
 
 
@@ -58,7 +63,7 @@ def fondo_de_caja(politica: dict, caja: str) -> float:
 
 # ------------------------------------------------------------------ catálogo de unidades de negocio
 
-RUTA_CATALOGO = RAIZ / "config" / "Catalogo_Cajas.xlsx"
+RUTA_CATALOGO = RUTA_CONFIG / "Catalogo_Cajas.xlsx"
 COLUMNAS_CATALOGO = ["Código caja (FUC)", "Unidad ejecutora", "Persona encargada", "Cédula persona encargada",
                      "Persona responsable (titular)", "Monto del fondo", "Aprobadores autorizados",
                      "Correo persona encargada", "Activa"]

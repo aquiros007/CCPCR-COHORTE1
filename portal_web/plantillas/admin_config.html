@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block titulo %}Configuración del motor{% endblock %}
+{% block contenido %}
+<h1>Configuración del motor de revisión</h1>
+{% if aviso_demo %}<div class="franja">La política vigente marca los datos como «{{ aviso_demo }}». Cuando empiece a recibir datos reales, suba una política con <code>dashboard.aviso: ""</code>.</div>{% endif %}
+
+<div class="dos">
+  <section class="tarjeta">
+    <h2>Catálogo de cajas (FUC)</h2>
+    <p class="sub">{{ catalogo | length }} cajas cargadas. Una fila por FUC: persona encargada, persona responsable, fondo y aprobadores.</p>
+    <form class="campos" method="post" action="/admin/configuracion/catalogo" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="cat">Archivo del catálogo (Excel o CSV)<input id="cat" name="archivo" type="file" accept=".xlsx,.csv" required></label>
+      <div class="acciones"><button type="submit">Cargar catálogo</button><a href="/plantillas/Plantilla_Catalogo_Cajas.xlsx">Plantilla del catálogo</a></div>
+    </form>
+    {% if problemas %}
+      <h2 class="separado">Reglas de apertura (arts. 4, 5, 13 b)</h2>
+      <ul class="lista">{% for p in problemas %}<li><b>{{ p.codigo }}</b>: {{ p.problema }} <span class="sub">({{ p.articulo }})</span></li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+
+  <section class="tarjeta">
+    <h2>Política (reglamento)</h2>
+    <p class="sub">{{ 'Política propia cargada.' if politica_propia else 'Se usa la política de ejemplo del código.' }} Institución: <b>{{ inst.nombre }}</b>, cédula {{ inst.cedula_juridica }}.</p>
+    {% if faltan %}<p class="sub">Parámetros del PGF sin definir (esos controles salen como NO SE PUEDE VERIFICAR): {{ faltan | join('; ') }}.</p>{% endif %}
+    <form class="campos" method="post" action="/admin/configuracion/politica" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="pol">Archivo politica.yaml<input id="pol" name="archivo" type="file" accept=".yaml,.yml" required></label>
+      <div class="acciones"><button type="submit">Cargar política</button><a href="/admin/configuracion/politica.yaml">Descargar la vigente</a></div>
+    </form>
+  </section>
+</div>
+
+<div class="dos">
+  <section class="tarjeta">
+    <h2>Informe consolidado de incumplimientos</h2>
+    <form class="rejilla" method="post" action="/admin/configuracion/informe">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="desde">Desde<input id="desde" name="desde" type="date" value="{{ hace30 }}" required></label>
+      <label for="hasta">Hasta<input id="hasta" name="hasta" type="date" value="{{ hoy }}" required></label>
+      <div class="acciones"><button type="submit">Generar y descargar</button></div>
+    </form>
+  </section>
+  <section class="tarjeta">
+    <h2>Plantillas</h2>
+    <ul class="lista">{% for p in plantillas %}<li><a href="/plantillas/{{ p }}">{{ p }}</a></li>{% endfor %}</ul>
+  </section>
+</div>
+
+<section class="tarjeta">
+  <h2>Acciones del motor</h2>
+  <div class="dos">
+    <form class="campos" method="post" action="/admin/configuracion/accion">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <p class="sub">Cruza de nuevo las facturas de proveedores recibidas y actualiza el dashboard.</p>
+      <div class="acciones"><button class="sec" name="accion" value="proveedores" type="submit">Cruzar facturas de proveedores</button></div>
+      <p class="sub">Carga el catálogo y los archivos de demostración (7 cajas, 4 entregas con irregularidades y 7 comprobantes).</p>
+      <div class="acciones"><button class="sec" name="accion" value="demo" type="submit">Cargar datos de demostración</button></div>
+    </form>
+    <form class="campos" method="post" action="/admin/configuracion/accion">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <p class="sub">Reiniciar borra los datos del motor (entregas, revisiones, catálogo, dashboard y validaciones). Se conservan las cuentas, los proveedores y la política. No se puede deshacer.</p>
+      <label for="confirmacion">Escriba BORRAR para confirmar<input id="confirmacion" name="confirmacion" autocomplete="off"></label>
+      <div class="acciones"><button class="sec" name="accion" value="reiniciar" type="submit">Reiniciar datos del motor</button></div>
+    </form>
+  </div>
+</section>
+{% endblock %}

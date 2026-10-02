@@ -25,9 +25,12 @@
             <a class="opcion {{ 'activa' if en_prov else '' }}" href="/admin/vista-proveedor">Vista proveedor</a>
           {% endif %}
         </div>
+        <a href="/admin/entregas">Entregas</a>
+        <a href="/admin/configuracion">Configuración</a>
         <a href="/admin/bitacora">Bitácora</a>
       {% endif %}
-      {% if es_admin or request.session.get('proveedor_id') %}
+      {% if request.session.get('rol') == 'encargado' %}<a href="/encargado">Mis entregas</a>{% endif %}
+      {% if es_admin or request.session.get('proveedor_id') or request.session.get('rol') == 'encargado' %}
         <form method="post" action="/salir"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sec" type="submit">Salir</button></form>
       {% endif %}
     </nav>

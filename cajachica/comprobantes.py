@@ -15,10 +15,10 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-from .config import RAIZ, ruta_repositorio
+from .config import RUTA_CONFIG, ruta_repositorio
 from .util import TIPOS_DOCUMENTO, descomponer_clave, fecha, monto, normalizar, solo_digitos, texto
 
-RUTA_PROVEEDORES = RAIZ / "config" / "Proveedores.xlsx"
+RUTA_PROVEEDORES = RUTA_CONFIG / "Proveedores.xlsx"
 COLUMNAS_PROVEEDOR = ["Cédula", "Razón social", "Nombre comercial", "Correo", "Teléfono", "Estado",
                       "Fecha de registro", "Observaciones"]
 CARPETAS = {"registro": "00_Registro", "pdf": "01_PDF", "xml": "02_XML", "respuesta": "03_Respuesta_Hacienda",

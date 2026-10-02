@@ -1,0 +1,12 @@
+{% macro pill_entrega(estado) -%}
+<span class="pill {{ {'PROCESADO': 'bien', 'RECHAZADO': 'critico', 'ERROR': 'critico'}.get(estado, 'alerta') }}">{{ {'RECIBIDO': 'Recibido', 'PROCESANDO': 'En revisión', 'PROCESADO': 'Revisado', 'RECHAZADO': 'Rechazado', 'ERROR': 'Error'}.get(estado, estado) }}</span>
+{%- endmacro %}
+
+{% macro resultado(ent) -%}
+{% if ent.estado == 'PROCESADO' and ent.resultado %}
+  {% for r in ent.resultado %}
+    <div><span class="pill {{ {'APROBABLE': 'bien', 'CUADRADO': 'bien', 'CON RECHAZOS': 'critico', 'CON HALLAZGOS GRAVES': 'critico'}.get(r.estado, 'alerta') }}">{{ r.estado }}</span>
+      <span class="sub">{{ r.liquidacion or ('arqueo ' ~ r.fecha) }} · ALTA {{ r.hallazgos.ALTA }} · MEDIA {{ r.hallazgos.MEDIA }}{% if r.monto_aprobable is defined %} · reintegrable ₡{{ '{:,.0f}'.format(r.monto_aprobable) }}{% endif %}</span></div>
+  {% endfor %}
+{% elif ent.mensaje %}<span class="sub">{{ ent.mensaje }}</span>{% endif %}
+{%- endmacro %}

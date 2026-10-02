@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_entregas.html" import pill_entrega, resultado %}
+{% block titulo %}Mis entregas{% endblock %}
+{% block contenido %}
+<h1>Caja chica · {{ e.nombre or e.correo }}</h1>
+<div class="dos">
+  <section class="tarjeta">
+    <h2>Entregar liquidación o arqueo</h2>
+    <p class="sub">A su cargo: {% for f, u in fucs %}<b>{{ f }}</b>{% if u %} {{ u }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    <form class="campos" method="post" action="/encargado/entregar" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label for="archivo">Archivo (Excel o CSV de la plantilla)<input id="archivo" name="archivo" type="file" accept=".xlsx,.xls,.xlsm,.csv" required></label>
+      <div class="acciones"><button type="submit">Entregar</button></div>
+    </form>
+  </section>
+  <section class="tarjeta">
+    <h2>Plantillas e instrucciones</h2>
+    <ul class="lista">
+      <li><a href="/plantillas/Plantilla_Liquidacion_CajaChica.xlsx">Plantilla de liquidación (Excel)</a></li>
+      <li><a href="/plantillas/Plantilla_Arqueo_CajaChica.xlsx">Plantilla de arqueo (Excel)</a></li>
+      <li><a href="/plantillas/Plantilla_Liquidacion_CajaChica.csv">Plantilla de liquidación (CSV)</a></li>
+      <li><a href="/plantillas/INSTRUCCIONES.txt">Instrucciones</a></li>
+    </ul>
+    <p class="sub">El reintegro mensual se entrega a más tardar el 5.º día hábil del mes siguiente. Si debe corregir, vuelva a entregar el archivo con el mismo número de liquidación: reemplaza la versión anterior.</p>
+  </section>
+</div>
+
+<section class="tarjeta">
+  <div class="acciones"><h2>Mis entregas</h2>{% if procesando %}<a class="boton sec" href="/encargado">Actualizar</a>{% endif %}</div>
+  {% if entregas %}
+  <div class="tabla"><table>
+    <thead><tr><th>Entregada</th><th>Archivo</th><th>Tipo</th><th>Estado</th><th>Resultado</th><th></th></tr></thead>
+    <tbody>
+    {% for x in entregas %}
+      <tr>
+        <td class="nw">{{ x.creado.strftime('%d/%m/%Y %H:%M') if x.creado else '' }}</td>
+        <td>{{ x.archivo }}</td>
+        <td>{{ {'liquidacion': 'Liquidación', 'arqueo': 'Arqueo'}.get(x.tipo, '—') }}</td>
+        <td>{{ pill_entrega(x.estado) }}</td>
+        <td>{{ resultado(x) }}</td>
+        <td class="nw">{% if x.estado == 'PROCESADO' %}<a href="/entrega/{{ x.id }}">Ver revisión</a> · <a href="/entrega/{{ x.id }}/revision">Excel</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}<p class="sub">Todavía no ha entregado archivos.</p>{% endif %}
+</section>
+{% endblock %}

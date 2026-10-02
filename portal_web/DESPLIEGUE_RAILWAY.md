@@ -11,6 +11,7 @@ uvicorn portal_web.app:app --host 0.0.0.0 --port $PORT
 
 1. Servicio web conectado a este repositorio (rama `main`).
 2. Agregue una base **PostgreSQL** al proyecto (New → Database → PostgreSQL).
+3. Agregue un **volumen** al servicio web montado en `/data` (`railway volume add --mount-path /data`).
 3. En el servicio web → *Settings → Networking*, genere un dominio público (o conecte el suyo).
 
 ## 2. Variables del servicio web
@@ -26,6 +27,9 @@ uvicorn portal_web.app:app --host 0.0.0.0 --port $PORT
 | `GOOGLE_OAUTH_CLIENT_ID` | Para Drive | Ver sección 3 |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Para Drive | Ver sección 3 |
 | `GOOGLE_OAUTH_REFRESH_TOKEN` | Para Drive | Ver sección 3 |
+| `CAJACHICA_DATA_DIR` | Sí | `/data` (volumen persistente: base del motor, entregas, revisiones, informes) |
+| `STORAGE_DIR` | Sí | `/data/portal_archivos` (facturas de proveedores si Drive no está configurado) |
+| `DRIVE_RAIZ_FOLDER_ID` | Para Drive | Id de la carpeta "Caja Chica U" (respaldo de originales, revisiones, informes y configuración) |
 | `INSTITUCION_NOMBRE` / `INSTITUCION_CEDULA` | No | Si difieren de `config/politica.ejemplo.yaml` |
 | `MAX_PDF_MB` | No | Tamaño máximo del PDF (5 por defecto) |
 

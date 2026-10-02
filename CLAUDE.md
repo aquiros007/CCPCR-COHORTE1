@@ -74,6 +74,14 @@ Los juegos completos se archivan en `04_Conciliados/<mes>/<clave>/`. Las liquida
 estos XML (`XML_NO_COINCIDE`, `FACTURA_RECHAZADA_HACIENDA`). La firma digital solo se verifica como presente,
 no criptográficamente.
 
+### Todo el flujo corre en Railway
+
+El motor de revisión corre dentro del portal (`portal_web/motor.py`) sobre el volumen `/data`
+(`CAJACHICA_DATA_DIR`): las personas encargadas entregan en `/encargado`, cada entrega se procesa al
+recibirla (un archivo a la vez, `motor.LOCK`), las facturas de proveedores entran solas al cruce y el
+dashboard se actualiza solo. Catálogo, política, informe consolidado, demostración y reinicio se manejan en
+`/admin/configuracion`. Los comandos locales de `run.py` quedan para trabajo en una computadora.
+
 ### Dashboard de caja chica en el portal de Railway (sección principal)
 
 El dashboard oficial vive en el portal de Railway (`/admin/tablero`): registro de revisión (rol y motivo),

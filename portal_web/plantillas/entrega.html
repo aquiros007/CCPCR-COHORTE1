@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_entregas.html" import pill_entrega, resultado %}
+{% block titulo %}Revisión · {{ ent.archivo }}{% endblock %}
+{% block contenido %}
+<div class="acciones"><h1>Revisión de {{ ent.archivo }}</h1>
+  {% if ent.estado == 'PROCESADO' %}<a class="boton sec" href="/entrega/{{ ent.id }}/revision">Descargar el Excel de revisión</a>{% endif %}</div>
+<section class="tarjeta">
+  <dl class="datos">
+    <dt>Estado</dt><dd>{{ pill_entrega(ent.estado) }}</dd>
+    <dt>FUC</dt><dd>{{ ent.fuc }}</dd>
+    <dt>Entregada</dt><dd>{{ ent.creado.strftime('%d/%m/%Y %H:%M') if ent.creado else '' }} por {{ ent.actor }}</dd>
+    <dt>Resultado</dt><dd>{{ resultado(ent) }}</dd>
+  </dl>
+</section>
+
+{% if d.verificacion %}
+<section class="tarjeta">
+  <h2>Lista de verificación del reglamento</h2>
+  <div class="tabla"><table>
+    <thead><tr><th>Área</th><th>Control</th><th>Artículo</th><th>Estado</th><th>Detalle</th></tr></thead>
+    <tbody>{% for v in d.verificacion %}
+      <tr><td>{{ v.grupo }}</td><td>{{ v.control }}</td><td class="nw">{{ v.articulo }}</td>
+        <td><span class="pill {{ {'CUMPLE': 'bien', 'NO CUMPLE': 'critico', 'NO SE PUEDE VERIFICAR': 'alerta'}.get(v.estado, '') }}">{{ v.estado }}</span></td>
+        <td class="sub">{{ v.detalle }}</td></tr>
+    {% endfor %}</tbody></table></div>
+</section>
+{% endif %}
+
+{% if d.hallazgos %}
+<section class="tarjeta">
+  <h2>Hallazgos</h2>
+  <div class="tabla"><table>
+    <thead><tr><th>N.º</th><th>Prioridad</th><th>Documento</th><th>Hallazgo</th><th>Artículo</th><th>Gravedad sugerida</th><th>Acción</th></tr></thead>
+    <tbody>{% for h in d.hallazgos %}
+      <tr><td>{{ loop.index }}</td>
+        <td><span class="pill {{ {'ALTA': 'critico', 'MEDIA': 'alerta'}.get(h.severidad, '') }}">{{ h.severidad }}</span></td>
+        <td>{% if h.fila %}Fila {{ h.fila }}{% if h.proveedor %} · {{ h.proveedor }}{% endif %}{% else %}Documento completo{% endif %}</td>
+        <td><b>{{ reglas.get(h.regla, h.regla) }}</b><div class="sub">{{ h.detalle }}</div></td>
+        <td class="sub">{{ h.articulo }}</td><td class="sub">{{ h.gravedad or '—' }}</td><td class="sub">{{ acciones.get(h.regla, '') }}</td></tr>
+    {% endfor %}</tbody></table></div>
+</section>
+{% endif %}
+
+{% if d.facturas %}
+<section class="tarjeta">
+  <h2>Factura por factura</h2>
+  <div class="tabla"><table>
+    <thead><tr><th>Fila</th><th>Fecha</th><th>Proveedor</th><th>N.º factura</th><th>Descripción</th><th class="n">Total</th><th>Estado</th></tr></thead>
+    <tbody>{% for f in d.facturas %}
+      <tr><td>{{ f.fila }}</td><td class="nw">{{ f.fecha }}</td><td>{{ f.proveedor }}</td><td>{{ f.consecutivo }}</td><td>{{ f.descripcion }}</td>
+        <td class="n">{% if f.total_crc is not none %}₡{{ '{:,.0f}'.format(f.total_crc) }}{% endif %}</td>
+        <td><span class="pill {{ {'OK': 'bien', 'RECHAZADA': 'critico', 'OBSERVADA': 'alerta'}.get(f.estado, '') }}">{{ f.estado }}</span></td></tr>
+    {% endfor %}</tbody></table></div>
+</section>
+{% endif %}
+<p class="sub">{{ aviso23 }}</p>
+{% endblock %}

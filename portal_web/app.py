@@ -6,8 +6,8 @@ import io
 import re
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import false, func, insert, select, update
@@ -100,6 +100,8 @@ def salud():
 def raiz(request: Request):
     if request.session.get("rol") == "admin":
         return RedirectResponse("/admin", 303)
+    if request.session.get("rol") == "encargado":
+        return RedirectResponse("/encargado", 303)
     if request.session.get("proveedor_id"):
         return RedirectResponse("/proveedor", 303)
     return RedirectResponse("/ingresar", 303)
@@ -157,6 +159,12 @@ def ingresar(request: Request, csrf: str = Form(""), usuario: str = Form(...), p
             request.session.update({"rol": "admin", "admin": usuario})
             db.registrar(f"admin:{usuario}", "ingreso", "", ip(request))
             return RedirectResponse("/admin", 303)
+    enc = db.uno(select(db.encargados).where(db.encargados.c.correo == usuario))
+    if enc and enc["activo"] and enc["password_hash"] and verificar_password(password, enc["password_hash"]):
+        request.session.clear()
+        request.session.update({"rol": "encargado", "encargado_id": enc["id"]})
+        db.registrar(f"encargado:{usuario}", "ingreso", "", ip(request))
+        return RedirectResponse("/encargado", 303)
     ced = re.sub(r"\D", "", usuario)
     p = db.uno(select(db.proveedores).where((db.proveedores.c.correo == usuario) |
                                             ((db.proveedores.c.cedula == ced) if ced else false())))
@@ -414,6 +422,287 @@ def admin_bitacora_csv(admin: str = Depends(admin_actual)):
         w.writerow([f["ts"], f["actor"], f["accion"], f["detalle"], f["ip"]])
     return Response("﻿" + salida.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": 'attachment; filename="Bitacora_portal_proveedores.csv"'})
+
+
+# ------------------------------------------------------------------ personas encargadas de caja chica
+
+import hashlib
+import secrets
+from datetime import date, timedelta
+
+from . import motor
+from .seguridad import hash_password as _hash
+
+EXT_ENTREGA = {".xlsx", ".xlsm", ".xls", ".csv"}
+
+
+def encargado_actual(request: Request) -> dict:
+    eid = request.session.get("encargado_id")
+    e = db.uno(select(db.encargados).where(db.encargados.c.id == eid)) if eid and request.session.get("rol") == "encargado" else None
+    if not e or not e["activo"]:
+        raise HTTPException(status_code=303, headers={"Location": "/ingresar"})
+    return e
+
+
+def _fucs(e: dict) -> list[str]:
+    return [f.strip().upper() for f in (e.get("fucs") or "").split(",") if f.strip()]
+
+
+def _sha(t: str) -> str:
+    return hashlib.sha256(t.encode()).hexdigest()
+
+
+@app.get("/activar/{token}", response_class=HTMLResponse)
+def activar_form(request: Request, token: str):
+    e = db.uno(select(db.encargados).where(db.encargados.c.token_hash == _sha(token)))
+    valido = e and e["token_expira"] and e["token_expira"].replace(tzinfo=e["token_expira"].tzinfo or db.ahora().tzinfo) > db.ahora()
+    return ver(request, "activar.html", valido=bool(valido), e=e, token=token)
+
+
+@app.post("/activar/{token}")
+def activar(request: Request, token: str, csrf: str = Form(""), password: str = Form(...), password2: str = Form(...)):
+    validar_csrf(request, csrf)
+    e = db.uno(select(db.encargados).where(db.encargados.c.token_hash == _sha(token)))
+    if not e or not e["token_expira"] or e["token_expira"].replace(tzinfo=e["token_expira"].tzinfo or db.ahora().tzinfo) <= db.ahora():
+        return ver(request, "activar.html", valido=False, e=None, token=token)
+    if len(password) < 10 or password != password2:
+        return ver(request, "activar.html", valido=True, e=e, token=token,
+                   error="La contraseña debe tener al menos 10 caracteres y coincidir en ambos campos.")
+    db.ejecutar(update(db.encargados).where(db.encargados.c.id == e["id"]).values(
+        password_hash=hash_password(password), token_hash=None, token_expira=None))
+    request.session.clear()
+    request.session.update({"rol": "encargado", "encargado_id": e["id"]})
+    db.registrar(f"encargado:{e['correo']}", "activacion", e["fucs"], ip(request))
+    avisar(request, "Cuenta activada. Ya puede entregar sus liquidaciones y arqueos.")
+    return RedirectResponse("/encargado", 303)
+
+
+@app.get("/encargado", response_class=HTMLResponse)
+def vista_encargado(request: Request, e: dict = Depends(encargado_actual)):
+    ents = db.todos(select(db.entregas).where(db.entregas.c.encargado_id == e["id"]).order_by(db.entregas.c.creado.desc()))
+    catalogo = motor.politica()["_catalogo"]
+    return ver(request, "encargado.html", e=e, fucs=[(f, (catalogo.get(f) or {}).get("unidad", "")) for f in _fucs(e)],
+               entregas=ents, procesando=any(x["estado"] in ("RECIBIDO", "PROCESANDO") for x in ents))
+
+
+@app.post("/encargado/entregar")
+async def entregar(request: Request, tareas: BackgroundTasks, csrf: str = Form(""), archivo: UploadFile = File(...),
+                   e: dict = Depends(encargado_actual)):
+    validar_csrf(request, csrf)
+    nombre = re.sub(r"[^\w.\- ]", "_", Path(archivo.filename or "entrega.xlsx").name)[:150]
+    if Path(nombre).suffix.lower() not in EXT_ENTREGA:
+        avisar(request, "Use la plantilla en Excel (.xlsx) o CSV.", "error")
+        return RedirectResponse("/encargado", 303)
+    contenido = await archivo.read(10 * 1024 * 1024 + 1)
+    if not contenido or len(contenido) > 10 * 1024 * 1024:
+        avisar(request, "El archivo está vacío o supera 10 MB.", "error")
+        return RedirectResponse("/encargado", 303)
+    r = db.ejecutar(insert(db.entregas).values(encargado_id=e["id"], actor=e["correo"], fuc=e["fucs"], archivo=nombre,
+                                               hash=hashlib.sha256(contenido).hexdigest(), estado="RECIBIDO", creado=db.ahora()))
+    eid = r.inserted_primary_key[0]
+    ruta = motor.carpeta_entregas() / f"{eid}_{nombre}"
+    ruta.write_bytes(contenido)
+    try:
+        tipo, cajas = motor.cajas_del_archivo(ruta)
+    except Exception as ex:
+        db.ejecutar(update(db.entregas).where(db.entregas.c.id == eid).values(
+            estado="RECHAZADO", mensaje=f"No se pudo leer: {ex}. Use la plantilla.", procesado=db.ahora()))
+        avisar(request, "No se pudo leer el archivo. Use la plantilla de la Universidad.", "error")
+        return RedirectResponse("/encargado", 303)
+    ajenas = sorted(c for c in cajas if c not in _fucs(e))
+    if ajenas:
+        db.ejecutar(update(db.entregas).where(db.entregas.c.id == eid).values(
+            estado="RECHAZADO", tipo=tipo, procesado=db.ahora(),
+            mensaje=f"El archivo es de {', '.join(ajenas)}; usted solo puede entregar para {', '.join(_fucs(e)) or 'ningún FUC'}."))
+        avisar(request, f"El archivo indica el FUC {', '.join(ajenas)}, que no está a su cargo.", "error")
+        return RedirectResponse("/encargado", 303)
+    db.ejecutar(update(db.entregas).where(db.entregas.c.id == eid).values(tipo=tipo))
+    db.registrar(f"encargado:{e['correo']}", "entrega", f"{eid} {nombre} ({tipo})", ip(request))
+    tareas.add_task(motor.procesar_entrega, eid)
+    avisar(request, "Archivo recibido. La revisión toma unos segundos: recargue la página para ver el resultado.")
+    return RedirectResponse("/encargado", 303)
+
+
+def _detalle_entrega(ent: dict) -> dict:
+    """Lista de verificación, hallazgos y facturas de una entrega, leídos de la base del motor."""
+    import sqlite3
+    from cajachica import config as cc
+    if not cc.RUTA_DB.exists():
+        return {}
+    con = sqlite3.connect(f"file:{cc.RUTA_DB}?mode=ro", uri=True, timeout=10)
+    con.row_factory = sqlite3.Row
+    q = lambda sql, p=(): [dict(r) for r in con.execute(sql, p).fetchall()]
+    try:
+        arch = q("SELECT id FROM archivos WHERE nombre=?", (f"{ent['id']}_{ent['archivo']}",))
+        if not arch:
+            return {}
+        aid = arch[0]["id"]
+        return {
+            "verificacion": q("SELECT grupo, control, articulo, estado, detalle FROM verificaciones WHERE archivo_id=? ORDER BY id", (aid,)),
+            "hallazgos": q("SELECT h.severidad, h.regla, h.detalle, h.monto, h.gravedad, h.articulo, f.fila, f.proveedor "
+                           "FROM hallazgos h LEFT JOIN facturas f ON f.id=h.factura_id WHERE h.archivo_id=? "
+                           "ORDER BY CASE h.severidad WHEN 'ALTA' THEN 0 WHEN 'MEDIA' THEN 1 ELSE 2 END", (aid,)),
+            "facturas": q("SELECT fila, fecha, proveedor, consecutivo, descripcion, total_crc, estado, observaciones "
+                          "FROM facturas WHERE archivo_id=? ORDER BY fila", (aid,)),
+        }
+    finally:
+        con.close()
+
+
+def _entrega_autorizada(request: Request, eid: int) -> dict:
+    ent = db.uno(select(db.entregas).where(db.entregas.c.id == eid))
+    if not ent:
+        raise HTTPException(404)
+    if request.session.get("rol") == "admin":
+        return ent
+    if request.session.get("rol") == "encargado" and ent["encargado_id"] == request.session.get("encargado_id"):
+        return ent
+    raise HTTPException(status_code=303, headers={"Location": "/ingresar"})
+
+
+@app.get("/entrega/{eid}", response_class=HTMLResponse)
+def ver_entrega(request: Request, eid: int):
+    ent = _entrega_autorizada(request, eid)
+    from cajachica.reglas import REGLAS
+    from cajachica.verificacion import ACCIONES, AVISO_ART_23
+    return ver(request, "entrega.html", ent=ent, d=_detalle_entrega(ent), reglas=REGLAS, acciones=ACCIONES, aviso23=AVISO_ART_23)
+
+
+@app.get("/entrega/{eid}/revision")
+def descargar_revision(request: Request, eid: int):
+    ent = _entrega_autorizada(request, eid)
+    if not ent.get("revision") or not Path(ent["revision"]).exists():
+        raise HTTPException(404, "La revisión todavía no está disponible.")
+    return FileResponse(ent["revision"], filename=Path(ent["revision"]).name,
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.get("/plantillas/{nombre}")
+def descargar_plantilla(request: Request, nombre: str):
+    if request.session.get("rol") not in ("admin", "encargado") and not request.session.get("proveedor_id"):
+        raise HTTPException(status_code=303, headers={"Location": "/ingresar"})
+    archivos = motor.plantillas()
+    if nombre not in archivos:
+        raise HTTPException(404)
+    return FileResponse(archivos[nombre], filename=nombre)
+
+
+# ------------------------------------------------------------------ administración del motor
+
+@app.get("/admin/entregas", response_class=HTMLResponse)
+def admin_entregas(request: Request, admin: str = Depends(admin_actual)):
+    ents = db.todos(select(db.entregas).order_by(db.entregas.c.creado.desc()).limit(500))
+    encs = db.todos(select(db.encargados).order_by(db.encargados.c.correo))
+    catalogo = motor.politica()["_catalogo"]
+    return ver(request, "admin_entregas.html", entregas=ents, encargados=encs, catalogo=sorted(catalogo.items()),
+               invitacion=request.session.pop("invitacion", None))
+
+
+@app.post("/admin/encargados/invitar")
+def invitar_encargado(request: Request, csrf: str = Form(""), correo: str = Form(...), nombre: str = Form(""),
+                      fucs: str = Form(...), admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    correo = correo.strip().lower()
+    lista = sorted({f.strip().upper() for f in fucs.split(",") if f.strip()})
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", correo) or not lista:
+        avisar(request, "Indique un correo válido y al menos un FUC.", "error")
+        return RedirectResponse("/admin/entregas#encargados", 303)
+    token = secrets.token_urlsafe(32)
+    previo = db.uno(select(db.encargados).where(db.encargados.c.correo == correo))
+    valores = dict(nombre=nombre.strip()[:200], fucs=",".join(lista), token_hash=_sha(token),
+                   token_expira=db.ahora() + timedelta(days=7), activo=True)
+    if previo:
+        db.ejecutar(update(db.encargados).where(db.encargados.c.id == previo["id"]).values(**valores))
+    else:
+        db.ejecutar(insert(db.encargados).values(correo=correo, creado=db.ahora(), **valores))
+    enlace = str(request.base_url).rstrip("/") + f"/activar/{token}"
+    request.session["invitacion"] = {"correo": correo, "enlace": enlace}
+    db.registrar(f"admin:{admin}", "invitacion_encargado", f"{correo} · {','.join(lista)}", ip(request))
+    return RedirectResponse("/admin/entregas#encargados", 303)
+
+
+@app.post("/admin/encargados/{eid}/estado")
+def estado_encargado(request: Request, eid: int, csrf: str = Form(""), activo: str = Form(...), admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    db.ejecutar(update(db.encargados).where(db.encargados.c.id == eid).values(activo=activo == "si"))
+    db.registrar(f"admin:{admin}", "estado_encargado", f"{eid} → {'activo' if activo == 'si' else 'inactivo'}", ip(request))
+    return RedirectResponse("/admin/entregas#encargados", 303)
+
+
+@app.get("/admin/configuracion", response_class=HTMLResponse)
+def admin_configuracion(request: Request, admin: str = Depends(admin_actual)):
+    from cajachica import config as cc
+    pol = motor.politica()
+    faltan = [n for n, v in (("Monto de licitación reducida (apertura)", (pol.get("apertura") or {}).get("monto_licitacion_reducida")),
+                             ("Fecha límite de la liquidación final (plazos)", (pol.get("plazos") or {}).get("fecha_limite_liquidacion_final")),
+                             ("Monto mínimo para la retención del 2 %", (pol.get("retencion_renta") or {}).get("monto_minimo"))) if not v]
+    return ver(request, "admin_config.html", catalogo=pol["_catalogo"], problemas=cc.problemas_catalogo(pol), faltan=faltan,
+               politica_propia=cc.RUTA_POLITICA.exists(), aviso_demo=(pol.get("dashboard") or {}).get("aviso", ""),
+               plantillas=sorted(motor.plantillas()), hoy=date.today().isoformat(),
+               hace30=(date.today() - timedelta(days=30)).isoformat(), inst=pol["institucion"])
+
+
+@app.post("/admin/configuracion/catalogo")
+async def subir_catalogo(request: Request, csrf: str = Form(""), archivo: UploadFile = File(...), admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    try:
+        cat = motor.guardar_catalogo(await archivo.read(5 * 1024 * 1024), archivo.filename or "catalogo.xlsx")
+        db.registrar(f"admin:{admin}", "catalogo", f"{len(cat)} cajas", ip(request))
+        avisar(request, f"Catálogo cargado: {len(cat)} cajas.")
+    except Exception as ex:
+        avisar(request, f"No se pudo cargar el catálogo: {ex}", "error")
+    return RedirectResponse("/admin/configuracion", 303)
+
+
+@app.post("/admin/configuracion/politica")
+async def subir_politica(request: Request, csrf: str = Form(""), archivo: UploadFile = File(...), admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    try:
+        motor.guardar_politica(await archivo.read(512 * 1024))
+        db.registrar(f"admin:{admin}", "politica", archivo.filename or "", ip(request))
+        avisar(request, "Política actualizada. Rige para las próximas revisiones.")
+    except Exception as ex:
+        avisar(request, f"No se pudo cargar la política: {ex}", "error")
+    return RedirectResponse("/admin/configuracion", 303)
+
+
+@app.get("/admin/configuracion/politica.yaml")
+def bajar_politica(admin: str = Depends(admin_actual)):
+    from cajachica import config as cc
+    ruta = cc.RUTA_POLITICA if cc.RUTA_POLITICA.exists() else cc.RUTA_POLITICA_EJEMPLO
+    return FileResponse(ruta, filename="politica.yaml", media_type="text/plain")
+
+
+@app.post("/admin/configuracion/informe")
+def generar_informe_web(request: Request, csrf: str = Form(""), desde: str = Form(...), hasta: str = Form(...),
+                        admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    from datetime import date as _d
+    ruta = motor.informe(_d.fromisoformat(desde), _d.fromisoformat(hasta))
+    db.registrar(f"admin:{admin}", "informe", f"{desde} a {hasta}", ip(request))
+    return FileResponse(ruta, filename=ruta.name)
+
+
+@app.post("/admin/configuracion/accion")
+def accion_motor(request: Request, tareas: BackgroundTasks, csrf: str = Form(""), accion: str = Form(...),
+                 confirmacion: str = Form(""), admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    if accion == "demo":
+        tareas.add_task(motor.cargar_demostracion)
+        avisar(request, "Cargando datos de demostración. En unos segundos aparecen en el dashboard.")
+    elif accion == "proveedores":
+        tareas.add_task(motor.reprocesar_proveedores)
+        avisar(request, "Cruzando las facturas de proveedores recibidas. El dashboard se actualiza al terminar.")
+    elif accion == "reiniciar":
+        if confirmacion.strip() != "BORRAR":
+            avisar(request, "Para reiniciar escriba BORRAR en el campo de confirmación.", "error")
+            return RedirectResponse("/admin/configuracion", 303)
+        motor.reiniciar_datos()
+        avisar(request, "Datos del motor reiniciados. Las cuentas y la política se conservan.")
+    else:
+        raise HTTPException(400)
+    db.registrar(f"admin:{admin}", f"motor_{accion}", "", ip(request))
+    return RedirectResponse("/admin/configuracion", 303)
 
 
 # ------------------------------------------------------------------ dashboard de caja chica (administradores)

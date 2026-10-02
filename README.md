@@ -5,6 +5,20 @@ Rica) contra el Reglamento de Cajas Chicas, factura por factura. Cruza los compr
 entregan los proveedores, lleva un dashboard histórico con registro de quién revisa, y respalda todo en
 Google Drive.
 
+## Dónde corre
+
+Todo el flujo funciona en **Railway** (`portal_web/`), sin depender de ninguna computadora:
+
+- **Personas encargadas**: la administración las invita por FUC; entregan su liquidación o arqueo en el
+  portal, el motor (`cajachica/`) lo revisa al instante y ven su lista de verificación, hallazgos y Excel.
+- **Proveedores**: se registran y envían PDF + XML + respuesta de Hacienda; el cruce entra al motor.
+- **Administración**: dashboard de caja chica, entregas, decisiones sobre facturas, catálogo, política,
+  informe consolidado y bitácora.
+- **Datos**: Postgres (cuentas, envíos, validaciones, bitácora) y un volumen persistente en `/data`
+  (base del motor, entregas, revisiones, informes); respaldo en Google Drive cuando hay credenciales.
+
+Los comandos de `run.py` siguen sirviendo para trabajar en una computadora con carpetas locales.
+
 ## Cómo funciona
 
 ```

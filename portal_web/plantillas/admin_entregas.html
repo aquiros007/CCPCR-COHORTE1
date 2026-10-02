@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_entregas.html" import pill_entrega, resultado %}
+{% block titulo %}Entregas de caja chica{% endblock %}
+{% block contenido %}
+<h1>Entregas de caja chica</h1>
+
+<section class="tarjeta" id="encargados">
+  <h2>Personas encargadas</h2>
+  {% if invitacion %}
+  <div class="mensaje exito" role="status">
+    Enlace de activación para <b>{{ invitacion.correo }}</b> (vence en 7 días; se muestra solo esta vez, envíelo usted por correo):
+    <div><code class="enlace-largo">{{ invitacion.enlace }}</code></div>
+  </div>
+  {% endif %}
+  <form class="rejilla" method="post" action="/admin/encargados/invitar">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="correo">Correo<input id="correo" name="correo" type="email" required></label>
+    <label for="nombre">Nombre<input id="nombre" name="nombre" maxlength="200"></label>
+    <label for="fucs">FUC a su cargo <span class="ayuda">Separe con comas si son varios</span>
+      <input id="fucs" name="fucs" list="lista-fucs" required placeholder="FUC-1201"></label>
+    <datalist id="lista-fucs">{% for c, i in catalogo %}<option value="{{ c }}">{{ i.unidad }} · {{ i.responsable }}</option>{% endfor %}</datalist>
+    <div class="acciones"><button type="submit">Crear enlace de invitación</button></div>
+  </form>
+  {% if encargados %}
+  <div class="tabla"><table>
+    <thead><tr><th>Persona</th><th>FUC</th><th>Cuenta</th><th></th></tr></thead>
+    <tbody>{% for x in encargados %}
+      <tr><td><b>{{ x.nombre or x.correo }}</b><div class="sub">{{ x.correo }}</div></td><td>{{ x.fucs.replace(',', ', ') }}</td>
+        <td>{% if not x.activo %}<span class="pill critico">Desactivada</span>{% elif x.password_hash %}<span class="pill bien">Activa</span>{% else %}<span class="pill alerta">Invitación pendiente</span>{% endif %}</td>
+        <td><form method="post" action="/admin/encargados/{{ x.id }}/estado" class="acciones">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          {% if x.activo %}<button class="sec" name="activo" value="no" type="submit">Desactivar</button>{% else %}<button class="sec" name="activo" value="si" type="submit">Reactivar</button>{% endif %}
+        </form></td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}<p class="sub">Todavía no hay personas encargadas. Cree la primera invitación arriba.</p>{% endif %}
+</section>
+
+<section class="tarjeta">
+  <div class="acciones"><h2>Entregas recibidas</h2><a class="boton sec" href="/admin/entregas">Actualizar</a></div>
+  {% if entregas %}
+  <div class="tabla"><table>
+    <thead><tr><th>Recibida</th><th>Persona</th><th>FUC</th><th>Archivo</th><th>Estado</th><th>Resultado</th><th></th></tr></thead>
+    <tbody>{% for x in entregas %}
+      <tr><td class="nw">{{ x.creado.strftime('%d/%m/%Y %H:%M') if x.creado else '' }}</td><td>{{ x.actor }}</td><td>{{ x.fuc }}</td><td>{{ x.archivo }}</td>
+        <td>{{ pill_entrega(x.estado) }}</td><td>{{ resultado(x) }}</td>
+        <td class="nw">{% if x.estado == 'PROCESADO' %}<a href="/entrega/{{ x.id }}">Ver</a> · <a href="/entrega/{{ x.id }}/revision">Excel</a>{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}<p class="sub">No hay entregas todavía.</p>{% endif %}
+</section>
+{% endblock %}
