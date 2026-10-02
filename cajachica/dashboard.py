@@ -61,12 +61,13 @@ def _datos(db: BaseDatos, catalogo: dict) -> dict:
 
 
 def generar_dashboard(ruta_db: Path, destinos: list[Path], institucion: str = "", catalogo: dict | None = None,
-                      aviso: str = "") -> list[Path]:
+                      aviso: str = "", portal_url: str = "") -> list[Path]:
     db = BaseDatos(ruta_db)
     datos = _datos(db, catalogo or {})
     db.cerrar()
     html = PLANTILLA.replace("__DATOS__", json.dumps(datos, ensure_ascii=False, default=str).replace("</", "<\\/"))
     html = html.replace("__INSTITUCION__", institucion or "")
+    html = html.replace("__PORTAL__", json.dumps(portal_url or ""))
     html = html.replace("__AVISO__", f'<span class="aviso">{aviso}</span>' if aviso else "")
     escritos = []
     for d in destinos:
@@ -265,6 +266,7 @@ details summary { cursor: pointer; color: var(--series-1); font-size: 12px; font
 </div>
 
 <header>
+  <a class="btn sec" id="linkPortal" hidden target="_blank" rel="noopener" style="float:right;text-decoration:none">Portal de proveedores</a>
   <h1>Control de Caja Chica</h1>
   <div class="sub">__INSTITUCION__ · Información con corte al <span id="gen"></span>__AVISO__</div>
 </header>
@@ -608,6 +610,8 @@ $("#puertaForm").addEventListener("submit", async e => {
   $("#sesionTexto").innerHTML = `Sesión registrada: <b>${esc(S.me.name || "Su cuenta")}</b> · ${esc(ev.rol)} · ${esc(ev.motivo)} · ${esc(fh(ev.ts))}`;
   $("#puerta").hidden = true; $("#app").hidden = false;
   $("#bitacora").hidden = !S.admin;
+  const PORTAL = __PORTAL__;
+  if (S.admin && PORTAL) { $("#linkPortal").href = PORTAL; $("#linkPortal").hidden = false; }
   render();
   await Promise.all([cargarValidaciones(), cargarAprobaciones()]);
   if (S.admin) cargarBitacora();

@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS verificaciones (
     id INTEGER PRIMARY KEY, archivo_id INTEGER, liquidacion_id INTEGER, arqueo_id INTEGER, caja TEXT,
     orden INTEGER, grupo TEXT, control TEXT, articulo TEXT, estado TEXT, detalle TEXT
 );
+CREATE TABLE IF NOT EXISTS portal_importados (
+    envio TEXT PRIMARY KEY, persona TEXT, clave TEXT, importado TEXT
+);
 CREATE TABLE IF NOT EXISTS hallazgos (
     id INTEGER PRIMARY KEY, archivo_id INTEGER, origen TEXT, liquidacion_id INTEGER,
     arqueo_id INTEGER, factura_id INTEGER, factura_relacionada_id INTEGER, caja TEXT,

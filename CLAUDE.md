@@ -74,6 +74,22 @@ Los juegos completos se archivan en `04_Conciliados/<mes>/<clave>/`. Las liquida
 estos XML (`XML_NO_COINCIDE`, `FACTURA_RECHAZADA_HACIENDA`). La firma digital solo se verifica como presente,
 no criptográficamente.
 
+### Portal de proveedores (`dashboard.portal_url`)
+
+Página aparte del dashboard (`cajachica/portal.py`, `run.py portal`): no lleva datos internos. El proveedor se
+registra y envía cada factura (PDF + XML + respuesta) con verificación inmediata en su navegador. Dueño y
+editores ven además la **vista administrador** (selector arriba a la derecha): aprueban registros y descargan
+lo recibido. Republicar con la misma `portal_url`, sin `capabilities`, para conservar sus 9 reglas.
+
+Cuando el usuario pida "trae los envíos del portal" (o al procesar la semana):
+1. `ArtifactData list` de `envios` (portal_url) para conocer a las personas; por cada una, `list` de
+   `envios/<persona>/facturas` y `envios/<persona>/pdf` con `out_dir` = scratchpad/portal.
+2. `run.py importar-portal <scratchpad>/portal`: deja los archivos en 07_Proveedores, cruza y omite lo ya importado.
+3. Leer `proveedores` y `estado_proveedores` y actualizar `config/Proveedores.xlsx` (estado Aprobado/Rechazado).
+4. Escribir en el portal `estado_envios/<persona>` → `{items: {<envio>: {estado, comentario, ts}}}` con
+   EN_REVISION al importar, y APROBADO / DEVUELTO / RECHAZADO según `aprobaciones` del dashboard (el
+   comentario es lo que verá el proveedor; nunca copiar ahí datos internos).
+
 La decisión (aprobar / devolver / rechazar) la toman en el dashboard las personas registradas con el rol
 "Jefatura / aprobador"; queda en `aprobaciones/<persona>/meses/<AAAA-MM>`.
 

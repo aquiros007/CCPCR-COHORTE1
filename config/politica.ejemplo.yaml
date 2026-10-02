@@ -239,5 +239,6 @@ proveedores:
 
 # --- Dashboard publicado (acceso con registro obligatorio) ---
 dashboard:
-  url: ""                                  # enlace oficial de claude.ai; lo completa Claude al publicar
+  url: ""   # enlace oficial de claude.ai; lo completa Claude al publicar
   aviso: "Datos de demostración"           # déjelo vacío ("") cuando cargue información real
+  portal_url: ""   # portal de proveedores; lo completa Claude al publicar

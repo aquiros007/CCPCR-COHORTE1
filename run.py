@@ -4,6 +4,9 @@
 Uso:
   python run.py iniciar      Crea las carpetas del repositorio y las plantillas
   python run.py procesar     Cruza comprobantes de proveedores, revisa todo lo de 01_Entrada y actualiza el dashboard
+  python run.py portal       Genera el portal de proveedores (reportes/portal_proveedores.html)
+  python run.py importar-portal <carpeta>
+                             Trae al repositorio los envíos exportados del portal (out_dir de ArtifactData)
   python run.py proveedores  Solo cruza los comprobantes de 07_Proveedores (PDF + XML + respuesta de Hacienda)
   python run.py dashboard    Regenera el dashboard desde la base de datos
   python run.py informe [días | desde hasta]
@@ -28,7 +31,7 @@ def _dashboard(politica, rutas):
     En el repositorio compartido queda un acceso directo, no una copia con los datos."""
     conf = politica.get("dashboard") or {}
     escritos = generar_dashboard(RUTA_DB, [RUTA_REPORTES / "dashboard.html"], politica["institucion"].get("nombre", ""),
-                                 politica["_catalogo"], conf.get("aviso", ""))
+                                 politica["_catalogo"], conf.get("aviso", ""), conf.get("portal_url", ""))
     copia_vieja = rutas["dashboard"] / "Dashboard_CajaChica.html"
     if copia_vieja.exists():
         copia_vieja.unlink()
@@ -98,6 +101,24 @@ def main():
         print(json.dumps(procesar_comprobantes(politica, db), ensure_ascii=False, indent=2, default=str))
         db.cerrar()
         _dashboard(politica, rutas)
+    elif comando == "portal":
+        from cajachica.portal import generar_portal
+        print("Portal:", generar_portal(RUTA_REPORTES / "portal_proveedores.html", politica))
+    elif comando == "importar-portal":
+        from pathlib import Path
+        from cajachica.comprobantes import procesar_comprobantes
+        from cajachica.portal import importar_envios
+        db = BaseDatos(RUTA_DB)
+        hechos = {r["envio"] for r in db.consultar("SELECT envio FROM portal_importados")}
+        res = importar_envios(Path(sys.argv[2]), politica, hechos)
+        for x in res["importados"]:
+            db.insertar("portal_importados", {"envio": x["envio"], "persona": x["persona"], "clave": x["clave"],
+                                              "importado": x["importado"]})
+        db.commit()
+        res["cruce"] = procesar_comprobantes(politica, db)
+        db.cerrar()
+        _dashboard(politica, rutas)
+        print(json.dumps(res, ensure_ascii=False, indent=2, default=str))
     elif comando == "dashboard":
         for p in _dashboard(politica, rutas):
             print("Dashboard:", p)
