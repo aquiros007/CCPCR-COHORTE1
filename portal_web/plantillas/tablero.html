@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block titulo %}Dashboard de caja chica{% endblock %}
+{% block contenido %}
+<link rel="stylesheet" href="/estatico/tablero.css">
+<div class="tablero" id="tablero" data-csrf="{{ csrf }}">
+  <div class="encabezado-tablero">
+    <div>
+      <h1>Dashboard de caja chica</h1>
+      <div class="sub">Información con corte al <span id="gen">—</span> <span id="aviso"></span></div>
+    </div>
+    <div class="sesion-revision">
+      <span class="sub">Sesión registrada: <b>{{ revision.rol }}</b> · {{ revision.motivo }}</span>
+      <button class="sec" type="button" id="vigAbrir">Confirmar que la información está al día</button>
+    </div>
+  </div>
+
+  {% if not hay_datos %}
+  <section class="tarjeta">
+    <h2>Todavía no hay datos publicados</h2>
+    <p class="sub">El agente de caja chica publica aquí los resultados después de cada procesamiento. Pídale a Claude
+      «procesa la semana» o ejecute <code>run.py publicar-web</code>.</p>
+  </section>
+  {% else %}
+  <div class="filtros">
+    <label for="fCaja">Caja <select id="fCaja"></select></label>
+    <label for="fDesde">Desde <input type="date" id="fDesde"></label>
+    <label for="fHasta">Hasta <input type="date" id="fHasta"></label>
+    <div class="chips" id="rangos">
+      <button type="button" data-d="28">4 semanas</button><button type="button" data-d="91">12 semanas</button>
+      <button type="button" data-d="365">12 meses</button><button type="button" data-d="0" class="on">Todo</button>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="rejilla-tablero">
+    <section class="tarjeta completa"><h2>Gasto semanal por resultado de la revisión</h2>
+      <div class="leyenda"><span><i class="c-ok"></i>OK</span><span><i class="c-obs"></i>Observada</span><span><i class="c-rech"></i>Rechazada</span></div>
+      <div id="gSemanal" class="grafico"></div></section>
+    <section class="tarjeta"><h2>Gasto por categoría</h2><div id="gCategoria" class="grafico"></div></section>
+    <section class="tarjeta"><h2>Gasto por caja (FUC)</h2><div id="gCaja" class="grafico"></div></section>
+    <section class="tarjeta"><h2>Top 10 proveedores</h2><div id="gProveedor" class="grafico"></div></section>
+    <section class="tarjeta"><h2>Hallazgos por tipo (ALTA y MEDIA)</h2><div id="gHallazgos" class="grafico"></div></section>
+  </div>
+
+  <section class="tarjeta"><h2>Hallazgos</h2>
+    <div class="barra-tabla">
+      <select id="fSev" aria-label="Severidad"><option value="">Todas las severidades</option><option>ALTA</option><option>MEDIA</option><option>BAJA</option></select>
+      <select id="fVal" aria-label="Validación"><option value="">Validados y sin validar</option><option value="no">Sin validar</option><option value="si">Validados</option></select>
+      <input id="fBuscar" placeholder="Buscar proveedor, regla, liquidación…" aria-label="Buscar">
+    </div>
+    <div class="tabla alta" id="tHallazgos"></div></section>
+
+  <section class="tarjeta"><h2>Facturas duplicadas o posibles duplicados</h2><div class="tabla" id="tDuplicados"></div></section>
+
+  <section class="tarjeta"><h2>Entregas por unidad (FUC)</h2>
+    <div class="barra-tabla"><input id="fUnidad" placeholder="Buscar unidad o responsable…" aria-label="Buscar unidad"></div>
+    <div class="tabla alta" id="tUnidades"></div></section>
+
+  <div class="rejilla-tablero">
+    <section class="tarjeta"><h2>Liquidaciones</h2><div class="tabla alta" id="tLiquidaciones"></div></section>
+    <section class="tarjeta"><h2>Arqueos</h2><div class="tabla alta" id="tArqueos"></div></section>
+  </div>
+
+  <section class="tarjeta"><h2>Comprobantes de proveedores cruzados por el agente</h2>
+    <p class="sub">Resultado del cruce PDF + XML + respuesta de Hacienda. Las decisiones sobre cada factura se toman en la <a href="/admin#envios">vista administrador</a>.</p>
+    <div class="tabla alta" id="tComprobantes"></div></section>
+
+  <section class="tarjeta"><h2>Validaciones y confirmaciones recientes</h2><div class="tabla" id="tRegistro"></div></section>
+  {% endif %}
+</div>
+
+<div class="capa" id="dlgValidar" hidden role="dialog" aria-modal="true" aria-labelledby="valTitulo">
+  <form class="tarjeta panel" id="valForm">
+    <h2 id="valTitulo">Validar evidencia del hallazgo</h2>
+    <div class="resumen-h" id="valResumen"></div>
+    <fieldset class="opciones" id="valOpciones"><legend>Resultado</legend></fieldset>
+    <label for="valComentario">Evidencia revisada y conclusión <span class="ayuda">Obligatorio: qué documento revisó y por qué concluye esto.</span>
+      <textarea id="valComentario" maxlength="1000" required></textarea></label>
+    <div class="mensaje error" id="valError" hidden></div>
+    <div class="acciones"><button type="button" class="sec" id="valCancelar">Cancelar</button><button type="submit" id="valBtn">Registrar validación</button></div>
+  </form>
+</div>
+
+<div class="capa" id="dlgVigencia" hidden role="dialog" aria-modal="true" aria-labelledby="vigTitulo">
+  <form class="tarjeta panel" id="vigForm">
+    <h2 id="vigTitulo">Confirmar que la información está al día</h2>
+    <fieldset class="opciones" id="vigOpciones"><legend>Resultado</legend></fieldset>
+    <label for="vigComentario">Observaciones <span class="ayuda">Obligatorio si no está al día.</span>
+      <textarea id="vigComentario" maxlength="1000"></textarea></label>
+    <div class="mensaje error" id="vigError" hidden></div>
+    <div class="acciones"><button type="button" class="sec" id="vigCancelar">Cancelar</button><button type="submit" id="vigBtn">Registrar confirmación</button></div>
+  </form>
+</div>
+<div class="tip" id="tip" hidden></div>
+<script src="/estatico/tablero.js" defer></script>
+{% endblock %}

@@ -74,6 +74,18 @@ Los juegos completos se archivan en `04_Conciliados/<mes>/<clave>/`. Las liquida
 estos XML (`XML_NO_COINCIDE`, `FACTURA_RECHAZADA_HACIENDA`). La firma digital solo se verifica como presente,
 no criptográficamente.
 
+### Dashboard de caja chica en el portal de Railway (sección principal)
+
+El dashboard oficial vive en el portal de Railway (`/admin/tablero`): registro de revisión (rol y motivo),
+indicadores, gráficos, hallazgos con validación de evidencia, duplicados, entregas por FUC, liquidaciones,
+arqueos, comprobantes cruzados y confirmación de vigencia, todo guardado en Postgres. Después de cada
+`run.py procesar`, publicar los datos con:
+
+    railway run --service CCPCR-COHORTE1 -- .venv/bin/python run.py publicar-web
+
+(`railway run` inyecta la dirección y el token del servicio sin mostrarlos). Las validaciones y confirmaciones
+se leen con `GET /api/validaciones`. El dashboard de claude.ai queda como respaldo.
+
 ### Portal web de proveedores externos (Railway, `portal_web/`)
 
 FastAPI + Postgres; los archivos van directo a Drive (`01_Facturas/<año>/<MM-Mes>/<cédula> <proveedor>/<n.º>/`).

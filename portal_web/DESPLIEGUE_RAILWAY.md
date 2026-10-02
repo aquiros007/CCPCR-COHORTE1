@@ -68,6 +68,12 @@ export PORTAL_API_TOKEN="<el mismo API_TOKEN de Railway>"
 Trae las facturas nuevas (estado Recibido) a `07_Proveedores`, las cruza, actualiza el registro de
 proveedores y le muestra al proveedor el estado "En revisión".
 
+Para publicar el dashboard de caja chica en el portal (después de cada procesamiento):
+
+```bash
+railway run --service CCPCR-COHORTE1 -- .venv/bin/python run.py publicar-web
+```
+
 ## Seguridad incluida
 
 Contraseñas con scrypt, sesiones firmadas (8 h, `HttpOnly`, `Secure` en producción), protección CSRF en

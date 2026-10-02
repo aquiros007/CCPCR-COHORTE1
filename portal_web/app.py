@@ -416,7 +416,115 @@ def admin_bitacora_csv(admin: str = Depends(admin_actual)):
                     headers={"Content-Disposition": 'attachment; filename="Bitacora_portal_proveedores.csv"'})
 
 
+# ------------------------------------------------------------------ dashboard de caja chica (administradores)
+
+ROLES = ["Revisor de liquidaciones", "Validador de evidencia", "Jefatura / aprobador", "Auditoría interna", "Consulta"]
+MOTIVOS = ["Revisión semanal de liquidaciones", "Validación de evidencia de hallazgos",
+           "Confirmar que la información está al día", "Seguimiento de hallazgos abiertos", "Consulta general"]
+RESULTADOS = {"CONFIRMADO": "Incumplimiento confirmado", "JUSTIFICADO": "Justificado: se acepta",
+              "INFO": "Requiere más información", "FALSO": "Falso positivo"}
+VIGENCIA = {"AL_DIA": "Al día", "DESACTUALIZADA": "Faltan entregas recientes", "INCONSISTENTE": "Datos inconsistentes"}
+
+
+def _ultimo_tablero() -> dict | None:
+    return db.uno(select(db.tablero).order_by(db.tablero.c.id.desc()).limit(1))
+
+
+def _csrf_json(request: Request):
+    validar_csrf(request, request.headers.get("x-csrf-token", ""))
+
+
+@app.get("/admin/tablero", response_class=HTMLResponse)
+def tablero(request: Request, admin: str = Depends(admin_actual)):
+    request.session.pop("modo", None)
+    request.session.pop("proveedor_id", None)
+    t = _ultimo_tablero()
+    if not request.session.get("revision"):
+        return ver(request, "tablero_registro.html", roles=ROLES, motivos=MOTIVOS, corte=t["generado"] if t else "")
+    return ver(request, "tablero.html", hay_datos=bool(t), revision=request.session["revision"])
+
+
+@app.post("/admin/tablero/registro")
+def tablero_registro(request: Request, csrf: str = Form(""), rol: str = Form(...), motivo: str = Form(...),
+                     alcance: str = Form(""), declaracion: str = Form(""), admin: str = Depends(admin_actual)):
+    validar_csrf(request, csrf)
+    if rol not in ROLES or motivo not in MOTIVOS or declaracion != "si":
+        avisar(request, "Elija rol y motivo y confirme la declaración para ingresar.", "error")
+        return RedirectResponse("/admin/tablero", 303)
+    t = _ultimo_tablero()
+    request.session["revision"] = {"rol": rol, "motivo": motivo, "alcance": alcance.strip()[:200],
+                                   "corte": t["generado"] if t else "", "ts": db.ahora().isoformat()}
+    db.registrar(f"admin:{admin}", "ingreso_dashboard", f"{rol} · {motivo}" + (f" · {alcance.strip()[:200]}" if alcance.strip() else "")
+                 + (f" · corte {t['generado']}" if t else ""), ip(request))
+    return RedirectResponse("/admin/tablero", 303)
+
+
+@app.get("/admin/tablero/datos.json")
+def tablero_datos(request: Request, admin: str = Depends(admin_actual)):
+    if not request.session.get("revision"):
+        raise HTTPException(403, "Registre su revisión primero.")
+    t = _ultimo_tablero()
+    vals = db.todos(select(db.validaciones).order_by(db.validaciones.c.ts.desc()))
+    vigs = db.todos(select(db.vigencias).order_by(db.vigencias.c.ts.desc()).limit(20))
+    iso = lambda filas: [{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in f.items()} for f in filas]
+    return JSONResponse({"datos": t["datos"] if t else None, "recibido": t["recibido"].isoformat() if t else None,
+                         "validaciones": iso(vals), "vigencias": iso(vigs), "resultados": RESULTADOS, "vigencia": VIGENCIA,
+                         "revision": request.session["revision"]})
+
+
+@app.post("/admin/tablero/validar")
+async def tablero_validar(request: Request, admin: str = Depends(admin_actual)):
+    _csrf_json(request)
+    rev = request.session.get("revision") or {}
+    c = await request.json()
+    if c.get("resultado") not in RESULTADOS or len(str(c.get("comentario", "")).strip()) < 10 or not c.get("clave"):
+        raise HTTPException(400, "Indique el resultado y describa la evidencia revisada (al menos 10 caracteres).")
+    db.ejecutar(insert(db.validaciones).values(
+        ts=db.ahora(), actor=admin, rol=rev.get("rol", ""), clave=str(c["clave"])[:40], resultado=c["resultado"],
+        comentario=str(c["comentario"]).strip()[:1000], corte=rev.get("corte", ""), caja=str(c.get("caja", ""))[:40],
+        regla=str(c.get("regla", ""))[:60], liquidacion=str(c.get("liquidacion", ""))[:60],
+        fila=c.get("fila") if isinstance(c.get("fila"), int) else None))
+    db.registrar(f"admin:{admin}", "validacion", f"{c.get('caja')} {c.get('liquidacion', '')} fila {c.get('fila', '')} · "
+                 f"{c.get('regla')} → {RESULTADOS[c['resultado']]} · {str(c['comentario'])[:300]}", ip(request))
+    return {"ok": True}
+
+
+@app.post("/admin/tablero/vigencia")
+async def tablero_vigencia(request: Request, admin: str = Depends(admin_actual)):
+    _csrf_json(request)
+    rev = request.session.get("revision") or {}
+    c = await request.json()
+    if c.get("resultado") not in VIGENCIA or (c["resultado"] != "AL_DIA" and len(str(c.get("comentario", "")).strip()) < 10):
+        raise HTTPException(400, "Elija el resultado y, si no está al día, explique qué falta.")
+    db.ejecutar(insert(db.vigencias).values(ts=db.ahora(), actor=admin, rol=rev.get("rol", ""), resultado=c["resultado"],
+                                            comentario=str(c.get("comentario", "")).strip()[:1000], corte=rev.get("corte", "")))
+    db.registrar(f"admin:{admin}", "vigencia", f"{VIGENCIA[c['resultado']]} · {str(c.get('comentario', ''))[:300]}", ip(request))
+    return {"ok": True}
+
+
 # ------------------------------------------------------------------ API para el agente (Bearer API_TOKEN)
+
+@app.post("/api/tablero", dependencies=[Depends(api_autorizada)])
+async def api_tablero(request: Request):
+    """El agente publica aquí los datos del dashboard después de cada procesamiento."""
+    datos = await request.json()
+    if not isinstance(datos, dict) or "hallazgos" not in datos or "facturas" not in datos:
+        raise HTTPException(400, "Formato de datos no reconocido.")
+    db.ejecutar(insert(db.tablero).values(recibido=db.ahora(), generado=str(datos.get("generado", ""))[:40], datos=datos))
+    viejos = db.todos(select(db.tablero.c.id).order_by(db.tablero.c.id.desc()).offset(10))
+    if viejos:
+        from sqlalchemy import delete
+        db.ejecutar(delete(db.tablero).where(db.tablero.c.id.in_([v["id"] for v in viejos])))
+    db.registrar("agente", "publicacion_dashboard", f"corte {datos.get('generado')} · {len(datos['facturas'])} facturas · "
+                 f"{len(datos['hallazgos'])} hallazgos")
+    return {"ok": True}
+
+
+@app.get("/api/validaciones", dependencies=[Depends(api_autorizada)])
+def api_validaciones():
+    iso = lambda filas: [{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in f.items()} for f in filas]
+    return JSONResponse({"validaciones": iso(db.todos(select(db.validaciones))), "vigencias": iso(db.todos(select(db.vigencias)))})
+
 
 @app.get("/api/envios", dependencies=[Depends(api_autorizada)])
 def api_envios(estado: str = ""):

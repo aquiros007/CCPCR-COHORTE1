@@ -55,6 +55,41 @@ envios = Table(
     Column("actualizado", DateTime(timezone=True)),
 )
 
+tablero = Table(                                # paquete de datos que publica el agente de caja chica
+    "tablero", meta,
+    Column("id", Integer, primary_key=True),
+    Column("recibido", DateTime(timezone=True)),
+    Column("generado", String(40)),
+    Column("datos", JSON),
+)
+
+validaciones = Table(                           # validación de evidencia de cada hallazgo
+    "validaciones", meta,
+    Column("id", Integer, primary_key=True),
+    Column("ts", DateTime(timezone=True)),
+    Column("actor", String(200)),
+    Column("rol", String(80)),
+    Column("clave", String(40), index=True),
+    Column("resultado", String(20)),
+    Column("comentario", Text),
+    Column("corte", String(40)),
+    Column("caja", String(40)),
+    Column("regla", String(60)),
+    Column("liquidacion", String(60)),
+    Column("fila", Integer),
+)
+
+vigencias = Table(                              # confirmaciones de que la información está al día
+    "vigencias", meta,
+    Column("id", Integer, primary_key=True),
+    Column("ts", DateTime(timezone=True)),
+    Column("actor", String(200)),
+    Column("rol", String(80)),
+    Column("resultado", String(30)),
+    Column("comentario", Text),
+    Column("corte", String(40)),
+)
+
 bitacora = Table(
     "bitacora", meta,
     Column("id", Integer, primary_key=True),

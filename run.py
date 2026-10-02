@@ -5,6 +5,7 @@ Uso:
   python run.py iniciar      Crea las carpetas del repositorio y las plantillas
   python run.py procesar     Cruza comprobantes de proveedores, revisa todo lo de 01_Entrada y actualiza el dashboard
   python run.py portal       Genera el portal de proveedores (reportes/portal_proveedores.html)
+  python run.py publicar-web Publica los datos del dashboard en el portal de Railway
   python run.py importar-web Trae las facturas nuevas del portal web (Railway) y las marca "En revisión"
   python run.py importar-portal <carpeta>
                              Trae al repositorio los envíos exportados del portal (out_dir de ArtifactData)
@@ -109,6 +110,28 @@ def main():
     elif comando == "portal":
         from cajachica.portal import generar_portal
         print("Portal:", generar_portal(RUTA_REPORTES / "portal_proveedores.html", politica))
+    elif comando == "publicar-web":
+        # Envía al portal de Railway los datos del dashboard (mismo paquete que el dashboard de claude.ai)
+        import os
+        import urllib.request
+        from cajachica.dashboard import _datos
+        base = os.environ.get("PORTAL_WEB_URL") or (f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}"
+                                                    if os.environ.get("RAILWAY_PUBLIC_DOMAIN") else "")
+        token = os.environ.get("PORTAL_API_TOKEN") or os.environ.get("API_TOKEN", "")
+        if not base or not token:
+            sys.exit("Defina PORTAL_WEB_URL y PORTAL_API_TOKEN, o ejecute con: railway run --service CCPCR-COHORTE1 -- "
+                     ".venv/bin/python run.py publicar-web")
+        db = BaseDatos(RUTA_DB)
+        datos = _datos(db, politica["_catalogo"])
+        db.cerrar()
+        datos["aviso"] = (politica.get("dashboard") or {}).get("aviso", "")
+        datos["institucion"] = politica["institucion"].get("nombre", "")
+        req = urllib.request.Request(base.rstrip("/") + "/api/tablero", method="POST",
+                                     data=json.dumps(datos, ensure_ascii=False, default=str).encode(),
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            print("Dashboard publicado en el portal:", r.status, f"· {len(datos['facturas'])} facturas, "
+                  f"{len(datos['hallazgos'])} hallazgos, {len(datos['unidades'])} unidades")
     elif comando == "importar-web":
         from cajachica.portal_remoto import importar
         db = BaseDatos(RUTA_DB)

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titulo %}Registro de revisión{% endblock %}
+{% block contenido %}
+<section class="tarjeta estrecha ancha">
+  <h1>Registro de revisión</h1>
+  <p class="sub">Cada ingreso al dashboard queda registrado en la bitácora con su rol, el motivo y la fecha de corte de la información{% if corte %} ({{ corte }}){% endif %}.</p>
+  <form class="campos" method="post" action="/admin/tablero/registro">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="rol">Rol en esta revisión
+      <select id="rol" name="rol" required>{% for r in roles %}<option>{{ r }}</option>{% endfor %}</select></label>
+    <label for="motivo">Motivo del ingreso
+      <select id="motivo" name="motivo" required>{% for m in motivos %}<option>{{ m }}</option>{% endfor %}</select></label>
+    <label for="alcance">Unidades o cajas que revisará <span class="ayuda">Opcional. Ej.: FUC-1201, FUC-2305</span>
+      <input id="alcance" name="alcance" maxlength="200"></label>
+    <label class="casilla" for="declaracion"><input type="checkbox" id="declaracion" name="declaracion" value="si" required>
+      <span>Confirmo que revisaré la información con el corte indicado y que las validaciones que registre quedan a mi nombre.</span></label>
+    <div class="acciones"><button type="submit">Registrarme e ingresar</button></div>
+  </form>
+</section>
+{% endblock %}
