@@ -1,0 +1,15 @@
+# Entorno
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Datos de la institución: nunca al repositorio público
+config/politica.yaml
+config/Catalogo_Cajas.xlsx
+config/Catalogo_Cajas.csv
+data/
+reportes/
+repositorio/
+politicas/*
+!politicas/LEAME.md

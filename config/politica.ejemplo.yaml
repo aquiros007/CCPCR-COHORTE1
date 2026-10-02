@@ -1,0 +1,129 @@
+# =====================================================================
+#  POLÍTICA DE CAJA CHICA — parámetros que usa el agente para auditar
+#  Edite los valores según la política vigente de la institución.
+#  Montos en colones (CRC) salvo que se indique otra moneda.
+# =====================================================================
+
+# --- Datos de la institución (toda factura debe venir a nombre de ella) ---
+institucion:
+  nombre: "NOMBRE LEGAL DE LA INSTITUCIÓN"        # razón social exacta
+  nombres_alternativos: []                          # ej. ["NOMBRE COMERCIAL", "SIGLAS"]
+  cedula_juridica: "3-000-000000"                   # con o sin guiones
+  correo_facturacion: ""                            # opcional: correo receptor esperado
+
+# --- Carpeta repositorio (OneDrive / Google Drive sincronizado en esta Mac) ---
+# Ejemplos:
+#   OneDrive:     ~/Library/CloudStorage/OneDrive-Personal/CajaChica
+#   Google Drive: ~/Library/CloudStorage/GoogleDrive-correo@gmail.com/Mi unidad/CajaChica
+repositorio: "./repositorio"
+
+# --- Fondos asignados por caja (código de caja -> monto del fondo) ---
+fondos:
+  DEFAULT: 500000
+
+# --- Tipo de cambio por defecto para facturas en dólares (si la fila no trae uno) ---
+tipo_cambio_usd: 505
+
+# --- Límites ---
+limites:
+  monto_maximo_por_factura: 10000        # ningún gasto individual puede superar este monto
+  monto_maximo_por_proveedor_dia: 10000   # suma por proveedor en la ventana (fraccionamiento); igual al tope por factura
+  ventana_fraccionamiento_dias: 3         # días para agrupar compras al mismo proveedor
+  antiguedad_maxima_factura_dias: 30      # días máximos entre fecha de factura y fecha de liquidación
+  porcentaje_minimo_para_liquidar: 0      # % del fondo que debe estar gastado para liquidar (0 = sin mínimo)
+  tolerancia_arqueo: 500                  # diferencia aceptable en el arqueo (faltante/sobrante)
+  dias_maximos_vale_pendiente: 5          # días máximos que un vale/adelanto puede estar sin liquidar
+
+# --- Categorías (cuentas) autorizadas para caja chica ---
+categorias_permitidas:
+  - Alimentación
+  - Atención a visitantes
+  - Combustible
+  - Correos y envíos
+  - Fotocopias e impresión
+  - Limpieza
+  - Mantenimiento menor
+  - Materiales de oficina
+  - Parqueos y peajes
+  - Transporte
+  - Otros gastos menores
+
+# --- Conceptos prohibidos: si aparecen en la descripción o proveedor se marca ALTA ---
+conceptos_prohibidos:
+  - licor
+  - cerveza
+  - vino
+  - alcohol
+  - cigarr
+  - tabaco
+  - lotería
+  - apuesta
+  - casino
+  - propina
+  - adelanto de salario
+  - préstamo
+  - prestamo
+  - regalo personal
+  - multa
+  - infracción
+  - uso personal
+
+# --- Conceptos que requieren justificación adicional (se marcan MEDIA) ---
+conceptos_sensibles:
+  - restaurante
+  - bar
+  - celular
+  - recarga
+  - taxi
+  - uber
+  - didi
+  - hotel
+  - obsequio
+  - regalo
+  - electrónico
+  - software
+  - suscripción
+  - activo
+
+# --- Comprobantes ---
+comprobantes:
+  exigir_factura_electronica: true        # CR: clave numérica de 50 dígitos
+  tipos_documento_aceptados: ["01"]       # 01 = Factura electrónica. 04 = Tiquete (no trae datos del receptor)
+  tasas_iva_validas: [0, 1, 2, 4, 13]     # % de IVA válidos en Costa Rica
+  tolerancia_calculo: 5                    # colones de tolerancia en subtotal + IVA = total
+
+# --- Señales de riesgo de baja severidad ---
+alertas:
+  marcar_fin_de_semana: true
+  marcar_montos_redondos: true            # múltiplos exactos de 5 000 (posible factura "armada")
+  monto_redondo_multiplo: 5000
+
+# --- Artículo de la política que respalda cada regla (aparece en el informe de incumplimientos) ---
+# Complete con el número de artículo / sección de su reglamento. Ej.: EXCEDE_LIMITE: "Art. 8 — Monto máximo por gasto"
+referencias_politica:
+  SIN_DATOS_INSTITUCION: ""
+  RECEPTOR_INCORRECTO: ""
+  TIPO_DOCUMENTO: ""
+  SIN_CLAVE: ""
+  EXCEDE_LIMITE: ""
+  GASTO_PROHIBIDO: ""
+  CATEGORIA_NO_AUTORIZADA: ""
+  FACTURA_VENCIDA: ""
+  FRACCIONAMIENTO: ""
+  DUPLICADO_EXACTO: ""
+  SIN_AUTORIZACION: ""
+  APROBADOR_NO_AUTORIZADO: ""
+  CONFLICTO_INTERES: ""
+  FALTANTE_ARQUEO: ""
+  VALE_VENCIDO: ""
+
+# --- Normas que requieren criterio (Claude las revisa al leer cada liquidación) ---
+# Copie aquí las cláusulas de la política que no se pueden reducir a un número o una palabra clave.
+reglas_cualitativas: []
+#  - "Los gastos de alimentación solo proceden para reuniones con personas externas a la compañía."
+#  - "No se permite adquirir activos (equipo, mobiliario) por caja chica."
+
+# --- Dashboard publicado (acceso con registro obligatorio) ---
+dashboard:
+  url: ""                                  # enlace oficial de claude.ai; lo completa Claude al publicar
+  aviso: "Datos de demostración"           # déjelo vacío ("") cuando cargue información real
