@@ -10,7 +10,8 @@ from datetime import date, timedelta
 from difflib import SequenceMatcher
 
 from .config import fondo_de_caja, info_caja
-from .util import TIPOS_DOCUMENTO, clave_ilegible, descomponer_clave, fecha, normalizar, solo_digitos
+from .util import (TIPOS_DOCUMENTO, clave_ilegible, descomponer_clave, enesimo_habil_del_mes, fecha, feriados,
+                   habiles_entre, normalizar, solo_digitos, sumar_habiles)
 
 REGLAS = {
     "COMPROBANTE_INCOMPLETO": "Faltan datos obligatorios del comprobante",
@@ -57,6 +58,20 @@ REGLAS = {
     "CAJA_INACTIVA": "La caja está marcada como inactiva",
     "CUSTODIO_NO_AUTORIZADO": "Quien entrega no es el responsable registrado de la caja",
     "APROBADOR_NO_AUTORIZADO": "El gasto lo aprobó alguien que no está autorizado para esa caja",
+    "SIN_IFE": "Sin código IFE de Sigesa",
+    "REQUIERE_AVAL_UTE": "Compra que requiere aval de una unidad técnica (UTE)",
+    "RETENCION_RENTA": "Retención del 2 % de renta no aplicada o mal calculada",
+    "GASTO_EXTRANJERO_INCOMPLETO": "Gasto en el extranjero sin los datos mínimos",
+    "SIN_DECISION_INICIAL": "Sin decisión inicial firmada por el titular subordinado",
+    "SIN_ESTADO_CUENTA": "Liquidación final sin estado de cuenta de la tarjeta",
+    "SIN_DEVOLUCION": "Liquidación final sin registro de devolución de efectivo",
+    "PLAZO_REINTEGRO": "Reintegro presentado fuera de plazo",
+    "PLAZO_LIQUIDACION_FINAL": "Liquidación final fuera del calendario de cierre",
+    "MOVIMIENTO_NO_CONCILIADO": "Movimientos bancarios que no coinciden con las compras",
+    "FACTURA_RECHAZADA_HACIENDA": "Factura rechazada por Hacienda",
+    "XML_NO_COINCIDE": "La liquidación no coincide con el XML de la factura",
+    "SIN_RESPALDO_XML": "Factura sin XML ni respuesta de Hacienda",
+    "SIN_ARQUEO_RECIENTE": "Caja sin arqueo reciente",
 }
 
 
@@ -131,7 +146,16 @@ def revisar_factura(f: dict, enc: dict, politica: dict) -> list[dict]:
     ced_inst = solo_digitos(inst.get("cedula_juridica"))
     nombres_inst = [inst.get("nombre", "")] + list(inst.get("nombres_alternativos") or [])
     parecido = max((_similar(f["receptor"], n) for n in nombres_inst), default=0)
-    if not f["receptor"] and not f["cedula_receptor"]:
+    es_ext = f.get("extranjero")
+    if es_ext:  # art. 10: sin clave de Hacienda, pero con los datos mínimos
+        faltan_ext = [n for n, v in (("emisor", f["proveedor"]), ("consecutivo", f["consecutivo"]),
+                                     ("fecha", f["fecha"]), ("descripción", f["descripcion"]),
+                                     ("monto", f["total"]), ("moneda", f["moneda"])) if not v]
+        if parecido < 0.85:
+            faltan_ext.insert(0, f"a nombre de {inst.get('nombre')}")
+        if faltan_ext:
+            hs.append(_h("MEDIA", "GASTO_EXTRANJERO_INCOMPLETO", "Gasto en el extranjero sin: " + ", ".join(faltan_ext) + "."))
+    elif not f["receptor"] and not f["cedula_receptor"]:
         hs.append(_h("ALTA", "SIN_DATOS_INSTITUCION",
                      "La factura no indica receptor ni cédula. Debe emitirse a nombre de "
                      f"{inst.get('nombre')} (cédula {inst.get('cedula_juridica')})."))
@@ -148,7 +172,7 @@ def revisar_factura(f: dict, enc: dict, politica: dict) -> list[dict]:
 
     # --- Comprobante electrónico
     tipo = f["tipo_doc"]
-    if comp.get("exigir_factura_electronica", True):
+    if comp.get("exigir_factura_electronica", True) and not es_ext:
         if clave_ilegible(f["clave_original"]):
             hs.append(_h("MEDIA", "CLAVE_ILEGIBLE",
                          f"La clave '{f['clave_original']}' se guardó como número y perdió dígitos. "
@@ -251,7 +275,61 @@ def revisar_factura(f: dict, enc: dict, politica: dict) -> list[dict]:
     if (enc.get("cedula_custodio") and f["cedula_proveedor"] == enc["cedula_custodio"]) or \
             _similar(f["proveedor"], custodio) >= 0.9 or _similar(f["proveedor"], f["solicitado_por"]) >= 0.9:
         hs.append(_h("ALTA", "CONFLICTO_INTERES", f"El proveedor '{f['proveedor']}' coincide con el custodio o solicitante."))
+
+    # --- Código IFE de Sigesa (art. 6 d)
+    if comp.get("exigir_codigo_ife") and f.get("tiene_col_ife") and not f.get("ife") and not es_ext:
+        hs.append(_h("MEDIA", "SIN_IFE", "No se indicó el código IFE de Sigesa que valida la factura electrónica."))
+
+    # --- Avales de unidades técnicas especializadas (arts. 7, 7 bis, 7 ter)
+    utes = utes_requeridas(f, politica)
+    if utes and not f.get("aval_ute"):
+        hs.append(_h("MEDIA", "REQUIERE_AVAL_UTE",
+                     "Puede requerir aval de " + "; ".join(f"{u} ({', '.join(p)})" for u, p in utes.items())
+                     + ". Indique el número de oficio del aval o justifique por qué no aplica."))
+
+    # --- Retención del 2 % de renta (art. 6 c)
+    ret = politica.get("retencion_renta") or {}
+    pct = float(ret.get("porcentaje", 2)) / 100
+    base = f["subtotal"] if f["subtotal"] is not None else (f["total"] or 0) - (f["iva"] or 0)
+    if f.get("retencion") is not None and base:
+        esperado = round(base * pct, 2)
+        if abs(f["retencion"] - esperado) > max(1, esperado * 0.02):
+            hs.append(_h("ALTA", "RETENCION_RENTA",
+                         f"Retención registrada {_fmt(f['retencion'])}; el {ret.get('porcentaje', 2)} % de "
+                         f"{_fmt(base)} es {_fmt(esperado)}."))
+    elif ret.get("monto_minimo") is not None and total and total >= float(ret["monto_minimo"]) and not es_ext:
+        hs.append(_h("ALTA", "RETENCION_RENTA",
+                     f"Compra de {_fmt(total)} (desde {_fmt(float(ret['monto_minimo']))} aplica la retención) "
+                     "sin retención registrada."))
+
+    # --- Cruce contra el XML y la respuesta de Hacienda que entregó el proveedor
+    comp_xml = (politica.get("_comprobantes") or {}).get(f["clave"]) if f["clave"] else None
+    if comp_xml:
+        if comp_xml["estado_hacienda"] == "Rechazado":
+            hs.append(_h("ALTA", "FACTURA_RECHAZADA_HACIENDA", "Hacienda rechazó este comprobante."))
+        difs = []
+        tol = float((politica.get("proveedores") or {}).get("tolerancia_monto", 1))
+        if comp_xml["total"] is not None and f["total"] is not None and abs(comp_xml["total"] - f["total"]) > tol:
+            difs.append(f"total digitado {_fmt(f['total'])} vs XML {_fmt(comp_xml['total'])}")
+        if comp_xml["fecha"] and f["fecha"] and str(f["fecha"]) != comp_xml["fecha"]:
+            difs.append(f"fecha digitada {f['fecha']:%d/%m/%Y} vs XML {comp_xml['fecha']}")
+        if comp_xml["emisor_cedula"] and f["cedula_proveedor"] and \
+                comp_xml["emisor_cedula"].lstrip("0") != f["cedula_proveedor"].lstrip("0"):
+            difs.append(f"cédula del proveedor {f['cedula_proveedor']} vs XML {comp_xml['emisor_cedula']}")
+        if difs:
+            hs.append(_h("ALTA", "XML_NO_COINCIDE", "La liquidación no coincide con el XML: " + "; ".join(difs) + "."))
+    f["respaldo_xml"] = comp_xml["estado"] if comp_xml else None
     return hs
+
+
+def utes_requeridas(f: dict, politica: dict) -> dict:
+    texto_gasto = f"{f.get('descripcion', '')} {f.get('categoria', '')}"
+    encontradas = {}
+    for ute, palabras in (politica.get("restricciones_ute") or {}).items():
+        hit = _contiene(texto_gasto, palabras or [])
+        if hit:
+            encontradas[ute] = hit
+    return encontradas
 
 
 # ================================================================== duplicados
@@ -376,6 +454,7 @@ def revisar_liquidacion(liq: dict, politica: dict, historico: list[dict]) -> dic
     fondo = fondo_de_caja(politica, enc["caja"])
     if not enc["custodio"]:
         generales.append(_h("MEDIA", "SIN_CUSTODIO", "Indique el nombre del custodio del fondo."))
+    generales += revisar_documentos_y_plazos(enc, facturas, liq.get("movimientos"), politica)
     if enc["monto_solicitado"] is not None and abs(enc["monto_solicitado"] - total) > 1:
         generales.append(_h("ALTA", "DIFERENCIA_REINTEGRO",
                             f"Se solicita {_fmt(enc['monto_solicitado'])} pero las facturas suman {_fmt(total)} "
@@ -400,6 +479,7 @@ def revisar_liquidacion(liq: dict, politica: dict, historico: list[dict]) -> dic
     return {
         "encabezado": enc,
         "facturas": facturas,
+        "movimientos": liq.get("movimientos"),
         "hallazgos_generales": generales,
         "resumen": {
             "total": total,
@@ -415,10 +495,71 @@ def revisar_liquidacion(liq: dict, politica: dict, historico: list[dict]) -> dic
     }
 
 
+def revisar_documentos_y_plazos(enc: dict, facturas: list[dict], movimientos, politica: dict) -> list[dict]:
+    hs = []
+    festivos = feriados(politica)
+    plazos = politica.get("plazos") or {}
+    tipo = enc.get("tipo_tramite") or "Reintegro mensual"
+
+    # Documentos del trámite (art. 6 c)
+    if not enc.get("decision_inicial") or enc.get("decision_firmada") is False:
+        hs.append(_h("MEDIA", "SIN_DECISION_INICIAL",
+                     "No se indicó el número de la decisión inicial." if not enc.get("decision_inicial")
+                     else f"La decisión inicial {enc['decision_inicial']} no está firmada por el titular subordinado."))
+    if tipo == "Liquidación final":
+        if enc.get("estado_cuenta") is not True:
+            hs.append(_h("MEDIA", "SIN_ESTADO_CUENTA", "La liquidación final debe adjuntar el estado de cuenta de la tarjeta institucional."))
+        if enc.get("devolucion") is None:
+            hs.append(_h("MEDIA", "SIN_DEVOLUCION", "Indique el monto de efectivo devuelto (0 si no hubo)."))
+
+    # Plazos (arts. 8, 14, 15, 17, 18)
+    corte = enc.get("fecha_liquidacion")
+    fechas = [f["fecha"] for f in facturas if f["fecha"]]
+    if corte and tipo == "Reintegro mensual" and fechas:
+        ultimo = enc.get("periodo_hasta") or max(fechas)
+        anio, mes = (ultimo.year + 1, 1) if ultimo.month == 12 else (ultimo.year, ultimo.month + 1)
+        limite = enesimo_habil_del_mes(anio, mes, int(plazos.get("reintegro_mensual_dia_habil", 5)), festivos)
+        if corte > limite:
+            hs.append(_h("MEDIA", "PLAZO_REINTEGRO",
+                         f"Gastos de {ultimo:%m/%Y}: el reintegro vencía el {limite:%d/%m/%Y} "
+                         f"({plazos.get('reintegro_mensual_dia_habil', 5)}.º día hábil) y se presentó el {corte:%d/%m/%Y}."))
+    limite_final = fecha(plazos.get("fecha_limite_liquidacion_final"))
+    if corte and tipo == "Liquidación final" and limite_final and corte > limite_final:
+        hs.append(_h("ALTA", "PLAZO_LIQUIDACION_FINAL",
+                     f"Presentada el {corte:%d/%m/%Y}; el calendario de cierre la exigía a más tardar el {limite_final:%d/%m/%Y}."))
+
+    # Movimientos de la cuenta bancaria contra las compras (art. 11 h)
+    if movimientos is not None:
+        libres = list(movimientos)
+        sin_mov = []
+        for f in facturas:
+            if not f["total_crc"]:
+                continue
+            match = next((m for m in libres if abs(m["monto"] - f["total_crc"]) <= 1 and
+                          (not m["fecha"] or not f["fecha"] or abs((m["fecha"] - f["fecha"]).days) <= 5)), None)
+            if match:
+                libres.remove(match)
+            else:
+                sin_mov.append(f)
+        if sin_mov:
+            hs.append(_h("MEDIA", "MOVIMIENTO_NO_CONCILIADO",
+                         "Facturas sin movimiento bancario equivalente: filas " + ", ".join(str(f["fila"]) for f in sin_mov) + ".",
+                         sum(f["total_crc"] for f in sin_mov)))
+        if libres:
+            hs.append(_h("ALTA", "MOVIMIENTO_NO_CONCILIADO",
+                         "Movimientos bancarios sin factura que los respalde: " +
+                         "; ".join(f"{m['fecha']:%d/%m/%Y} {m['descripcion']} {_fmt(m['monto'])}" if m["fecha"]
+                                   else f"{m['descripcion']} {_fmt(m['monto'])}" for m in libres) + ".",
+                         sum(m["monto"] for m in libres)))
+    return hs
+
+
 # ================================================================== arqueo
 
 def revisar_arqueo(a: dict, politica: dict, historico: list[dict]) -> dict:
     lim = politica["limites"]
+    plazos = politica.get("plazos") or {}
+    festivos = feriados(politica)
     hs = verificar_caja(a["caja"], a["custodio"], "", politica)
     fondo_asignado = fondo_de_caja(politica, a["caja"])
     fondo = a["fondo"] or fondo_asignado
@@ -427,22 +568,29 @@ def revisar_arqueo(a: dict, politica: dict, historico: list[dict]) -> dict:
     diferencia = contabilizado - fondo
     tolerancia = lim.get("tolerancia_arqueo", 0)
 
+    rep_ = a.get("fecha_reposicion")
     if diferencia < -tolerancia:
-        hs.append(_h("ALTA", "FALTANTE_ARQUEO",
+        plazo = sumar_habiles(corte, int(plazos.get("faltante_dias_habiles", 0)), festivos)
+        reposicion = ("No consta la reposición: debía cubrirse el mismo día." if not rep_ else
+                      f"Repuesto el {rep_:%d/%m/%Y}, en plazo." if rep_ <= plazo else
+                      f"Repuesto el {rep_:%d/%m/%Y}, fuera de plazo (debía ser el {plazo:%d/%m/%Y}).")
+        hs.append(_h("ALTA" if not rep_ or rep_ > plazo else "MEDIA", "FALTANTE_ARQUEO",
                      f"Efectivo {_fmt(a['efectivo'])} + facturas {_fmt(a['pendientes_facturas'])} + vales "
-                     f"{_fmt(a['vales'])} = {_fmt(contabilizado)}; fondo {_fmt(fondo)}. Faltan {_fmt(-diferencia)}.",
-                     diferencia))
+                     f"{_fmt(a['vales'])} = {_fmt(contabilizado)}; fondo {_fmt(fondo)}. Faltan {_fmt(-diferencia)}. "
+                     + reposicion, diferencia))
     elif diferencia > tolerancia:
+        plazo = sumar_habiles(corte, int(plazos.get("sobrante_dias_habiles", 1)), festivos)
+        reposicion = (f"Debe reintegrarse a más tardar el {plazo:%d/%m/%Y}; no consta el reintegro." if not rep_ else
+                      f"Reintegrado el {rep_:%d/%m/%Y}" + (", en plazo." if rep_ <= plazo else f", fuera de plazo (límite {plazo:%d/%m/%Y})."))
         hs.append(_h("MEDIA", "SOBRANTE_ARQUEO",
-                     f"Sobran {_fmt(diferencia)} respecto al fondo de {_fmt(fondo)}. "
-                     "Un sobrante también indica registros incompletos.", diferencia))
+                     f"Sobran {_fmt(diferencia)} respecto al fondo de {_fmt(fondo)}. " + reposicion, diferencia))
     if a["fondo"] and fondo_asignado and abs(a["fondo"] - fondo_asignado) > 1:
         hs.append(_h("MEDIA", "FONDO_DIFERENTE",
                      f"Se declaró {_fmt(a['fondo'])}; la política asigna {_fmt(fondo_asignado)} a la caja {a['caja']}."))
     if not a["realizado_por"] or _similar(a["realizado_por"], a["custodio"]) >= 0.9:
         hs.append(_h("MEDIA", "ARQUEO_NO_INDEPENDIENTE",
-                     "El arqueo debe hacerlo una persona distinta al custodio." if a["realizado_por"]
-                     else "No se indicó quién realizó el arqueo."))
+                     "El arqueo lo hace la persona responsable o el Programa de Gestión Financiera, no la persona encargada."
+                     if a["realizado_por"] else "No se indicó quién realizó el arqueo."))
 
     claves_hist = {h["clave"]: h for h in historico if h.get("clave")}
     numeros_hist = {(h.get("consecutivo"), round(h.get("total_crc") or 0)): h for h in historico if h.get("consecutivo")}
@@ -450,9 +598,12 @@ def revisar_arqueo(a: dict, politica: dict, historico: list[dict]) -> dict:
         es_vale = "VALE" in normalizar(p["tipo"]) or "ADELANTO" in normalizar(p["tipo"])
         if p["fecha"]:
             dias = (corte - p["fecha"]).days
-            if es_vale and dias > lim.get("dias_maximos_vale_pendiente", 5):
+            habiles = habiles_entre(p["fecha"], corte, festivos)
+            maximo = int(plazos.get("vales_dias_habiles", lim.get("dias_maximos_vale_pendiente", 5)))
+            if es_vale and habiles > maximo:
                 hs.append(_h("MEDIA", "VALE_VENCIDO",
-                             f"Vale a {p['beneficiario'] or 's/n'} por {_fmt(p['monto'])} con {dias} días sin liquidar.", p["monto"]))
+                             f"Vale a {p['beneficiario'] or 's/n'} por {_fmt(p['monto'])} con {habiles} días hábiles "
+                             f"sin liquidar (máximo {maximo}).", p["monto"]))
             elif not es_vale and dias > lim["antiguedad_maxima_factura_dias"]:
                 hs.append(_h("MEDIA", "PENDIENTE_VENCIDO",
                              f"Factura {p['numero'] or p['clave'][-10:]} de {p['beneficiario']} con {dias} días sin liquidar.", p["monto"]))

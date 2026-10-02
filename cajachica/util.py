@@ -1,7 +1,7 @@
 """Normalización de datos: montos, fechas, textos, cédulas y clave de factura electrónica (CR)."""
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -115,3 +115,44 @@ TIPOS_DOCUMENTO = {
     "08": "Factura electrónica de compra",
     "09": "Factura electrónica de exportación",
 }
+
+
+# ------------------------------------------------------------------ días hábiles
+
+def feriados(politica: dict) -> set:
+    return {fecha(f) for f in (politica.get("feriados") or []) if fecha(f)}
+
+
+def es_habil(d: date, festivos: set) -> bool:
+    return d.weekday() < 5 and d not in festivos
+
+
+def sumar_habiles(desde: date, n: int, festivos: set) -> date:
+    """Fecha que resulta de avanzar n días hábiles (n=0 devuelve el mismo día si es hábil, o el siguiente hábil)."""
+    d = desde
+    while not es_habil(d, festivos):
+        d += timedelta(days=1)
+    contados = 0
+    while contados < n:
+        d += timedelta(days=1)
+        if es_habil(d, festivos):
+            contados += 1
+    return d
+
+
+def habiles_entre(desde: date, hasta: date, festivos: set) -> int:
+    """Días hábiles transcurridos después de `desde` hasta `hasta` inclusive."""
+    if hasta <= desde:
+        return 0
+    return sum(1 for i in range(1, (hasta - desde).days + 1) if es_habil(desde + timedelta(days=i), festivos))
+
+
+def enesimo_habil_del_mes(anio: int, mes: int, n: int, festivos: set) -> date:
+    d = date(anio, mes, 1)
+    vistos = 0
+    while True:
+        if es_habil(d, festivos):
+            vistos += 1
+            if vistos == n:
+                return d
+        d += timedelta(days=1)

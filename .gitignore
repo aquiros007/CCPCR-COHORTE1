@@ -8,6 +8,7 @@ __pycache__/
 config/politica.yaml
 config/Catalogo_Cajas.xlsx
 config/Catalogo_Cajas.csv
+config/Proveedores.xlsx
 data/
 reportes/
 repositorio/

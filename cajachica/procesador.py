@@ -8,7 +8,9 @@ from .config import RUTA_DB, carpetas
 from .db import BaseDatos
 from .lectura import ErrorLectura, leer_archivo
 from .reglas import REGLAS, _h, revisar_arqueo, revisar_liquidacion
+from .comprobantes import comprobantes_por_clave, procesar_comprobantes
 from .reporte import informe_arqueos, informe_liquidaciones
+from .verificacion import clasificar, documentos_pendientes, lista_arqueo, lista_liquidacion
 
 EXTENSIONES = {".xlsx", ".xlsm", ".xls", ".csv"}
 
@@ -32,7 +34,15 @@ def _guardar_hallazgo(db, h, archivo_id, origen, caja, liquidacion_id=None, arqu
         "factura_id": factura_id, "factura_relacionada_id": h.get("factura_relacionada_id"), "caja": caja,
         "severidad": h["severidad"], "regla": h["regla"], "detalle": h["detalle"], "monto": h.get("monto"),
         "fecha_registro": datetime.now().isoformat(timespec="seconds"),
+        "gravedad": h.get("gravedad", ""), "articulo": h.get("articulo", ""),
     })
+
+
+def _guardar_verificacion(db, lista, archivo_id, caja, liquidacion_id=None, arqueo_id=None):
+    for i, it in enumerate(lista, 1):
+        db.insertar("verificaciones", {"archivo_id": archivo_id, "liquidacion_id": liquidacion_id, "arqueo_id": arqueo_id,
+                                       "caja": caja, "orden": i, "grupo": it["grupo"], "control": it["control"],
+                                       "articulo": it["articulo"], "estado": it["estado"], "detalle": it["detalle"]})
 
 
 def _procesar_liquidaciones(db, datos, archivo_id, politica):
@@ -49,6 +59,10 @@ def _procesar_liquidaciones(db, datos, archivo_id, politica):
                 "BAJA", "LIQUIDACION_REEMPLAZADA",
                 f"Ya existía la liquidación {enc['numero']} (procesada {previa['fecha_proceso'][:10]}); "
                 "se reemplazó por esta versión."))
+        clasificar(res["hallazgos_generales"] + [h for f in res["facturas"] for h in f["hallazgos"]],
+                   enc["caja"], politica, db, archivo_id)
+        res["verificacion"] = lista_liquidacion(res, politica)
+        res["pendientes"] = documentos_pendientes(res["verificacion"])
         r = res["resumen"]
         liq_id = db.insertar("liquidaciones", {
             "archivo_id": archivo_id, "caja": enc["caja"], "custodio": enc["custodio"],
@@ -56,7 +70,9 @@ def _procesar_liquidaciones(db, datos, archivo_id, politica):
             "fecha": enc["fecha_liquidacion"] or datetime.now().date(), "monto_solicitado": enc["monto_solicitado"],
             "total_facturas": r["total"], "n_facturas": r["n_facturas"], "n_rechazadas": r["n_rechazadas"],
             "n_observadas": r["n_observadas"], "estado": r["estado"], "fecha_proceso": ahora,
+            "tipo_tramite": enc.get("tipo_tramite"),
         })
+        _guardar_verificacion(db, res["verificacion"], archivo_id, enc["caja"], liquidacion_id=liq_id)
         for h in res["hallazgos_generales"]:
             _guardar_hallazgo(db, h, archivo_id, "liquidacion", enc["caja"], liquidacion_id=liq_id)
         for f in res["facturas"]:
@@ -83,6 +99,9 @@ def _procesar_arqueos(db, datos, archivo_id, politica):
     ahora = datetime.now().isoformat(timespec="seconds")
     for a in datos:
         res = revisar_arqueo(a, politica, db.facturas_historicas())
+        clasificar(res["hallazgos"], a["caja"], politica, db, archivo_id)
+        res["verificacion"] = lista_arqueo(res, politica)
+        res["pendientes"] = documentos_pendientes(res["verificacion"])
         arq_id = db.insertar("arqueos", {
             "archivo_id": archivo_id, "caja": a["caja"], "custodio": a["custodio"],
             "fecha": a["fecha"] or datetime.now().date(), "realizado_por": a["realizado_por"], "fondo": res["fondo"],
@@ -93,6 +112,7 @@ def _procesar_arqueos(db, datos, archivo_id, politica):
             db.insertar("arqueo_pendientes", {"arqueo_id": arq_id, **p})
         for h in res["hallazgos"]:
             _guardar_hallazgo(db, h, archivo_id, "arqueo", a["caja"], arqueo_id=arq_id)
+        _guardar_verificacion(db, res["verificacion"], archivo_id, a["caja"], arqueo_id=arq_id)
         resultados.append(res)
     return resultados
 
@@ -100,7 +120,8 @@ def _procesar_arqueos(db, datos, archivo_id, politica):
 def procesar(politica: dict) -> dict:
     rutas = carpetas(politica)
     db = BaseDatos(RUTA_DB)
-    bitacora = {"procesados": [], "omitidos": [], "rechazados": []}
+    bitacora = {"proveedores": procesar_comprobantes(politica, db), "procesados": [], "omitidos": [], "rechazados": []}
+    politica = {**politica, "_comprobantes": comprobantes_por_clave(db)}
     # Liquidaciones primero: así el arqueo puede detectar pendientes que ya fueron reintegrados
     archivos = sorted((p for p in rutas["entrada"].iterdir()
                        if p.is_file() and p.suffix.lower() in EXTENSIONES and not p.name.startswith(("~$", "."))),

@@ -3,7 +3,8 @@
 
 Uso:
   python run.py iniciar      Crea las carpetas del repositorio y las plantillas
-  python run.py procesar     Revisa todo lo que haya en 01_Entrada y actualiza el dashboard
+  python run.py procesar     Cruza comprobantes de proveedores, revisa todo lo de 01_Entrada y actualiza el dashboard
+  python run.py proveedores  Solo cruza los comprobantes de 07_Proveedores (PDF + XML + respuesta de Hacienda)
   python run.py dashboard    Regenera el dashboard desde la base de datos
   python run.py informe [días | desde hasta]
                              Informe de incumplimientos de todas las unidades (por defecto, últimos 7 días)
@@ -91,6 +92,12 @@ def main():
         bitacora = procesar(politica)
         bitacora["dashboard"] = [str(p) for p in _dashboard(politica, rutas)]
         print(json.dumps(bitacora, ensure_ascii=False, indent=2, default=str))
+    elif comando == "proveedores":
+        from cajachica.comprobantes import procesar_comprobantes
+        db = BaseDatos(RUTA_DB)
+        print(json.dumps(procesar_comprobantes(politica, db), ensure_ascii=False, indent=2, default=str))
+        db.cerrar()
+        _dashboard(politica, rutas)
     elif comando == "dashboard":
         for p in _dashboard(politica, rutas):
             print("Dashboard:", p)

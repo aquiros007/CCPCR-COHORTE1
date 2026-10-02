@@ -1,4 +1,4 @@
-# Agente de Control de Caja Chica
+# Agente de Control de Caja Chica — Universidad Nacional
 
 Revisa automáticamente las liquidaciones y los arqueos de caja chica, factura por factura, contra la
 política de la institución, y lleva un dashboard histórico del gasto.
@@ -20,9 +20,28 @@ Carpetas del repositorio compartido:
 | `02_Procesados` | Agente | Originales ya revisados, por mes |
 | `03_Revisiones` | Custodios y usted | Informe Excel: resumen, factura por factura, hallazgos |
 | `04_Rechazados` | Custodios | Archivos ilegibles, con una nota de por qué |
-| `05_Dashboard` | Usted | Dashboard del comportamiento del gasto |
+| `05_Dashboard` | Revisores | Acceso directo al dashboard publicado (con registro obligatorio) |
+| `06_Informes` | Usted | Informe consolidado de incumplimientos de todas las unidades |
+| `07_Proveedores` | Proveedores | `00_Registro`, `01_PDF`, `02_XML`, `03_Respuesta_Hacienda`; el agente archiva en `04_Conciliados` |
 
-## Qué revisa
+## Comprobantes de proveedores
+
+Los proveedores se registran con `Plantilla_Registro_Proveedor.xlsx` (en `07_Proveedores/00_Registro`) y por
+cada factura suben tres archivos a carpetas separadas: el PDF, el XML de la factura y el XML de respuesta de
+Hacienda. El agente los une por la clave de 50 dígitos, cruza que los tres coincidan y deja cada comprobante
+en la sección **Aprobación de comprobantes** del dashboard, donde la jefatura aprueba, devuelve o rechaza.
+
+## Qué revisa (Reglamento de Cajas Chicas de la UNA)
+
+Cada liquidación y cada arqueo recibe una **lista de verificación** con estado CUMPLE / NO CUMPLE / NO SE
+PUEDE VERIFICAR / NO APLICA por artículo, y cada hallazgo una **gravedad sugerida** (arts. 20–22, con
+reincidencia en 3 meses). Además de lo de abajo: decisión inicial firmada, código IFE, retención del 2 %,
+avales de UTE (arts. 7, 7 bis, 7 ter), estado de cuenta y devolución en liquidaciones finales, plazos en días
+hábiles (reintegro al 5.º día hábil, vales en 5 días hábiles, faltantes el mismo día, sobrantes al día
+siguiente), conciliación contra movimientos bancarios (art. 11 h), gastos en el extranjero (art. 10) y reglas
+de apertura del catálogo (una caja por FUC y por persona encargada, fondo ≤ 10 % de licitación reducida).
+
+### Controles base
 
 **Cada factura**: datos de la institución (nombre y cédula jurídica del receptor), clave de 50 dígitos
 de Hacienda (y que su fecha, emisor y consecutivo coincidan con lo digitado), tipo de comprobante

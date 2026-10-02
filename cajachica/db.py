@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS archivos (
 CREATE TABLE IF NOT EXISTS liquidaciones (
     id INTEGER PRIMARY KEY, archivo_id INTEGER, caja TEXT, custodio TEXT, cedula_custodio TEXT,
     numero TEXT, fecha TEXT, monto_solicitado REAL, total_facturas REAL, n_facturas INTEGER,
-    n_rechazadas INTEGER, n_observadas INTEGER, estado TEXT, fecha_proceso TEXT
+    n_rechazadas INTEGER, n_observadas INTEGER, estado TEXT, fecha_proceso TEXT, tipo_tramite TEXT
 );
 CREATE TABLE IF NOT EXISTS facturas (
     id INTEGER PRIMARY KEY, liquidacion_id INTEGER, archivo_id INTEGER, caja TEXT, fila INTEGER,
@@ -31,10 +31,19 @@ CREATE TABLE IF NOT EXISTS arqueo_pendientes (
     id INTEGER PRIMARY KEY, arqueo_id INTEGER, tipo TEXT, fecha TEXT, clave TEXT, numero TEXT,
     beneficiario TEXT, descripcion TEXT, monto REAL
 );
+CREATE TABLE IF NOT EXISTS comprobantes (
+    clave TEXT PRIMARY KEY, tipo_doc TEXT, consecutivo TEXT, fecha TEXT, emisor_cedula TEXT, emisor_nombre TEXT,
+    receptor_cedula TEXT, receptor_nombre TEXT, moneda TEXT, total REAL, impuesto REAL, descripcion TEXT,
+    estado_hacienda TEXT, archivos TEXT, controles TEXT, estado TEXT, fecha_recepcion TEXT, fecha_actualizacion TEXT
+);
+CREATE TABLE IF NOT EXISTS verificaciones (
+    id INTEGER PRIMARY KEY, archivo_id INTEGER, liquidacion_id INTEGER, arqueo_id INTEGER, caja TEXT,
+    orden INTEGER, grupo TEXT, control TEXT, articulo TEXT, estado TEXT, detalle TEXT
+);
 CREATE TABLE IF NOT EXISTS hallazgos (
     id INTEGER PRIMARY KEY, archivo_id INTEGER, origen TEXT, liquidacion_id INTEGER,
     arqueo_id INTEGER, factura_id INTEGER, factura_relacionada_id INTEGER, caja TEXT,
-    severidad TEXT, regla TEXT, detalle TEXT, monto REAL, fecha_registro TEXT,
+    severidad TEXT, regla TEXT, detalle TEXT, monto REAL, fecha_registro TEXT, gravedad TEXT, articulo TEXT,
     estado TEXT DEFAULT 'Abierto', comentario TEXT
 );
 """
@@ -51,6 +60,16 @@ class BaseDatos:
         self.con = sqlite3.connect(ruta)
         self.con.row_factory = sqlite3.Row
         self.con.executescript(ESQUEMA)
+        self._migrar()
+
+    def _migrar(self):
+        """Agrega columnas nuevas a bases creadas con versiones anteriores."""
+        nuevas = {"hallazgos": {"gravedad": "TEXT", "articulo": "TEXT"}, "liquidaciones": {"tipo_tramite": "TEXT"}}
+        for tabla, columnas in nuevas.items():
+            existentes = {r[1] for r in self.con.execute(f"PRAGMA table_info({tabla})")}
+            for col, tipo in columnas.items():
+                if col not in existentes:
+                    self.con.execute(f"ALTER TABLE {tabla} ADD COLUMN {col} {tipo}")
 
     def insertar(self, tabla: str, datos: dict) -> int:
         columnas = list(datos)
@@ -79,6 +98,7 @@ class BaseDatos:
     def eliminar_liquidacion(self, liquidacion_id: int):
         """Una versión corregida reemplaza a la anterior (evita duplicados falsos)."""
         self.con.execute("DELETE FROM hallazgos WHERE liquidacion_id=?", (liquidacion_id,))
+        self.con.execute("DELETE FROM verificaciones WHERE liquidacion_id=?", (liquidacion_id,))
         self.con.execute("UPDATE hallazgos SET factura_relacionada_id=NULL WHERE factura_relacionada_id IN "
                          "(SELECT id FROM facturas WHERE liquidacion_id=?)", (liquidacion_id,))
         self.con.execute("DELETE FROM facturas WHERE liquidacion_id=?", (liquidacion_id,))

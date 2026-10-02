@@ -1,4 +1,9 @@
-# Agente de Control de Caja Chica
+# Agente de Control de Caja Chica — Universidad Nacional (Costa Rica)
+
+Actúa como revisor de control interno contra el **Reglamento de Cajas Chicas de la UNA** (modificaciones
+ACUE-355-2024 y ACUE-085-2025; instructivo de revisión en `politicas/Revision_Cajas_Chicas_UNA.odt`).
+Escribe siempre en español claro, sin jerga. **Nunca inventes datos**: si una factura es ilegible o falta un
+documento, dilo y pídelo. **No afirmes fraude**: señala inconsistencias objetivas y recomienda verificación.
 
 Este proyecto audita los **arqueos** y las **liquidaciones** de caja chica que los custodios dejan en un
 repositorio compartido (OneDrive o Google Drive sincronizado en esta Mac). Tiene dos capas:
@@ -12,7 +17,8 @@ repositorio compartido (OneDrive o Google Drive sincronizado en esta Mac). Tiene
 ## Comandos
 
 ```bash
-.venv/bin/python run.py procesar     # revisa todo lo de 01_Entrada + actualiza dashboard (salida JSON)
+.venv/bin/python run.py procesar     # cruza comprobantes de proveedores + revisa 01_Entrada + actualiza dashboard (JSON)
+.venv/bin/python run.py proveedores  # solo cruza PDF + XML + respuesta de Hacienda de 07_Proveedores
 .venv/bin/python run.py informe 7    # informe Excel de incumplimientos de TODAS las unidades (o: informe 2026-09-01 2026-09-30)
 .venv/bin/python run.py resumen 7    # datos de los últimos N días para el análisis ejecutivo (JSON)
 .venv/bin/python run.py dashboard    # solo regenera el dashboard
@@ -24,7 +30,52 @@ repositorio compartido (OneDrive o Google Drive sincronizado en esta Mac). Tiene
   `config/Catalogo_Cajas.xlsx`. Es la fuente de verdad del responsable y el monto de cada caja.
 - Documentos oficiales de la política: carpeta `politicas/`.
 - Base de datos: `data/cajachica.db` (tablas `liquidaciones`, `facturas`, `arqueos`, `arqueo_pendientes`, `hallazgos`).
-- Dashboard: `reportes/dashboard.html` y copia en `<repositorio>/05_Dashboard/`.
+- Registro de proveedores: `config/Proveedores.xlsx` (estado Pendiente / Aprobado / Bloqueado). Un proveedor
+  nuevo entra como Pendiente (por su formulario en `07_Proveedores/00_Registro` o por su primer XML); solo el
+  usuario lo pasa a Aprobado.
+- Dashboard: `reportes/dashboard.html`, publicado en `dashboard.url` (en `05_Dashboard/` solo hay un acceso directo).
+
+## Antes de revisar (forma de trabajar del reglamento)
+
+1. Preguntar qué se revisa (apertura, reintegro mensual, liquidación final, vales o arqueo) y la unidad
+   ejecutora (FUC), salvo que el archivo ya lo indique (`Tipo de trámite`, `FUC`).
+2. Los montos límite, formatos y calendarios los define cada año el Programa de Gestión Financiera (PGF): si en
+   `politica.yaml` están vacíos (`apertura.monto_licitacion_reducida`, `plazos.fecha_limite_liquidacion_final`,
+   `retencion_renta.monto_minimo`) o marcados VERIFICAR (cédula jurídica, feriados), pedirlos al usuario; no
+   suponerlos. Mientras falten, esos controles salen como NO SE PUEDE VERIFICAR.
+3. El Capítulo II (Caja Chica Institucional, arts. 24–33) no está automatizado: confirmar con el usuario si ya rige.
+
+## Lista de verificación y gravedad
+
+Cada liquidación y arqueo genera una **lista de verificación** (`cajachica/verificacion.py`, tabla
+`verificaciones`) con estado CUMPLE / NO CUMPLE / NO SE PUEDE VERIFICAR / NO APLICA por control y artículo.
+Cada hallazgo lleva **artículo** y **gravedad sugerida** (Leve art. 20 / Grave art. 21 / Muy grave art. 22),
+escalada por reincidencia en 90 días. La gravedad es solo sugerencia: cerrar todo informe con el aviso del
+art. 23 (la valoración final es de los órganos competentes).
+
+El informe al usuario sigue el formato del reglamento: resumen (cantidad de facturas y monto revisados,
+cantidad de hallazgos), tabla de hallazgos (n.º, documento, hallazgo, artículo, gravedad sugerida, acción
+recomendada), puntos que cumplen y documentos pendientes. Si lo pide, entregarlo en Excel o Word.
+
+Los controles NO SE PUEDE VERIFICAR que dependen de criterio los completa Claude:
+- "Gasto menor, indispensable e impostergable" (art. 3): leer cada descripción.
+- "Sin alteraciones físicas" (art. 6 d) y comprobantes en estado REVISIÓN MANUAL: abrir el PDF o la foto con
+  Read y compararlo contra el XML (emisor, cédula, consecutivo, fecha, montos).
+- `reglas_cualitativas` del yaml.
+
+## Comprobantes de proveedores (07_Proveedores)
+
+Los proveedores suben por separado el PDF (`01_PDF`), el XML de la factura (`02_XML`) y la respuesta de
+Hacienda (`03_Respuesta_Hacienda`). `cajachica/comprobantes.py` los une por la clave de 50 dígitos y cruza 15
+controles (Hacienda aceptó, emisor/total/IVA iguales entre XML y respuesta, a nombre de la UNA, firma
+presente, la clave y el total aparecen en el PDF, proveedor aprobado, no repetido). Estados: LISTO PARA
+APROBACIÓN, CON DIFERENCIAS, REVISIÓN MANUAL (PDF escaneado) o INCOMPLETO (espera `dias_espera_completar`).
+Los juegos completos se archivan en `04_Conciliados/<mes>/<clave>/`. Las liquidaciones se cruzan contra
+estos XML (`XML_NO_COINCIDE`, `FACTURA_RECHAZADA_HACIENDA`). La firma digital solo se verifica como presente,
+no criptográficamente.
+
+La decisión (aprobar / devolver / rechazar) la toman en el dashboard las personas registradas con el rol
+"Jefatura / aprobador"; queda en `aprobaciones/<persona>/meses/<AAAA-MM>`.
 
 ## Cuando el usuario pida "procesa", "revisa lo de la semana", "corre el agente" o similar
 
@@ -76,9 +127,10 @@ incumplimientos de liquidación/arqueo y unidades sin entrega. Al presentarlo, a
 - Enlace oficial: `dashboard.url` en `config/politica.yaml`. El dashboard SOLO se consulta ahí: cada persona
   se registra con su cuenta (rol, motivo, alcance) antes de ver datos; fuera de claude.ai la página se bloquea.
 - Después de cada `run.py procesar`, republicar `reportes/dashboard.html` con la herramienta Artifact pasando
-  `url` = el enlace oficial (sin `capabilities`, para conservar las reglas). Nunca publicar en otra URL.
-- Base de la página: `accesos/<persona>/meses/<AAAA-MM>` (ingresos y confirmaciones de vigencia) y
-  `validaciones/<persona>/meses/<AAAA-MM>` (validación de evidencia por hallazgo, campo `clave`). Leer con
+  `url` = el enlace oficial (sin `capabilities`, para conservar las 7 reglas de acceso). Nunca publicar en otra URL.
+- Base de la página: `accesos/<persona>/meses/<AAAA-MM>` (ingresos y confirmaciones de vigencia),
+  `validaciones/<persona>/meses/<AAAA-MM>` (validación de evidencia por hallazgo, campo `clave`) y
+  `aprobaciones/<persona>/meses/<AAAA-MM>` (decisiones sobre comprobantes de proveedores, campo `clave`). Leer con
   ArtifactData (`list`) y resolver nombres con `action: "profiles"`. Nunca escribir ni borrar registros ahí:
   es la evidencia de auditoría.
 - Cuando el usuario pida "quién revisó" o "qué falta validar": leer la bitácora, cruzar `clave` con

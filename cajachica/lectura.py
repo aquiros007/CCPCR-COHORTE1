@@ -23,7 +23,8 @@ COLUMNAS_FACTURA = {
     "proveedor": _alias("proveedor", "emisor", "nombre proveedor", "nombre del proveedor", "comercio"),
     "cedula_proveedor": _alias("cedula proveedor", "cedula del proveedor", "identificacion proveedor",
                                "cedula emisor", "id proveedor"),
-    "receptor": _alias("receptor", "nombre receptor", "a nombre de", "cliente", "facturado a"),
+    "receptor": _alias("receptor", "nombre receptor", "a nombre de", "cliente", "facturado a",
+                       "receptor a nombre de"),
     "cedula_receptor": _alias("cedula receptor", "identificacion receptor", "cedula cliente",
                               "cedula juridica receptor"),
     "descripcion": _alias("descripcion", "descripcion del gasto", "detalle", "concepto", "detalle del gasto"),
@@ -35,12 +36,25 @@ COLUMNAS_FACTURA = {
     "tipo_cambio": _alias("tipo de cambio", "tipo cambio", "tc"),
     "solicitado_por": _alias("solicitado por", "solicitante", "beneficiario", "funcionario"),
     "autorizado_por": _alias("autorizado por", "aprobado por", "autoriza", "aprobador"),
+    "ife": _alias("codigo ife", "ife", "codigo ife sigesa"),
+    "aval_ute": _alias("aval ute", "aval de ute", "oficio aval ute", "aval"),
+    "retencion": _alias("retencion 2", "retencion", "retencion renta", "retencion de renta"),
+    "extranjero": _alias("extranjero", "gasto en el extranjero", "gasto extranjero"),
 }
 
 COLUMNAS_LIQUIDACION = {
-    "caja": _alias("caja", "codigo caja", "caja chica", "centro de costo", "departamento"),
-    "custodio": _alias("custodio", "responsable", "encargado", "responsable de caja"),
-    "cedula_custodio": _alias("cedula custodio", "cedula del custodio", "cedula responsable"),
+    "caja": _alias("caja", "codigo caja", "caja chica", "centro de costo", "departamento", "fuc",
+                   "unidad ejecutora", "codigo fuc"),
+    "custodio": _alias("custodio", "responsable", "encargado", "responsable de caja", "persona encargada",
+                       "encargada"),
+    "titular": _alias("persona responsable", "titular subordinado", "titular"),
+    "tipo_tramite": _alias("tipo de tramite", "tipo tramite", "tramite"),
+    "decision_inicial": _alias("decision inicial", "numero de decision inicial", "decision inicial numero"),
+    "decision_firmada": _alias("decision inicial firmada", "firmada por el titular"),
+    "estado_cuenta": _alias("estado de cuenta adjunto", "estado de cuenta"),
+    "devolucion": _alias("devolucion de efectivo", "devolucion"),
+    "cedula_custodio": _alias("cedula custodio", "cedula del custodio", "cedula responsable",
+                              "cedula persona encargada", "cedula encargada"),
     "numero": _alias("numero de liquidacion", "numero liquidacion", "n liquidacion", "liquidacion", "no liquidacion"),
     "fecha_liquidacion": _alias("fecha de liquidacion", "fecha liquidacion"),
     "monto_solicitado": _alias("monto solicitado", "monto a reintegrar", "reintegro solicitado", "monto solicitado reintegro"),
@@ -57,6 +71,8 @@ COLUMNAS_ARQUEO = {
     "efectivo": _alias("efectivo contado", "efectivo", "total efectivo"),
     "pendientes": _alias("facturas pendientes", "facturas por liquidar", "comprobantes pendientes"),
     "vales": _alias("vales pendientes", "vales", "adelantos"),
+    "tipo_arqueo": _alias("tipo de arqueo",),
+    "fecha_reposicion": _alias("fecha de reposicion", "fecha reposicion", "fecha de reposicion o reintegro"),
 }
 
 COLUMNAS_EFECTIVO = {
@@ -181,7 +197,35 @@ def _limpiar_factura(f: dict) -> dict:
         "tipo_cambio": monto(f.get("tipo_cambio")),
         "solicitado_por": texto(f.get("solicitado_por")),
         "autorizado_por": texto(f.get("autorizado_por")),
+        "ife": texto(f.get("ife")).removesuffix(".0"),
+        "tiene_col_ife": "ife" in f,
+        "aval_ute": texto(f.get("aval_ute")),
+        "retencion": monto(f.get("retencion")),
+        "extranjero": normalizar(f.get("extranjero")) in ("SI", "S", "X", "1", "TRUE"),
     }
+
+
+def _si_no(v) -> bool | None:
+    n = normalizar(v)
+    return True if n in ("SI", "S", "X", "1", "TRUE") else False if n in ("NO", "N", "0", "FALSE") else None
+
+
+def _tipo_tramite(v) -> str:
+    n = normalizar(v)
+    if "FINAL" in n:
+        return "Liquidación final"
+    if "VALE" in n:
+        return "Liquidación de vales"
+    if "APERTURA" in n:
+        return "Apertura"
+    return "Reintegro mensual"
+
+
+COLUMNAS_MOVIMIENTO = {
+    "fecha": _alias("fecha",),
+    "descripcion": _alias("descripcion", "detalle", "concepto"),
+    "monto": _alias("monto", "debito", "cargo", "valor"),
+}
 
 
 def _limpiar_encabezado(e: dict) -> dict:
@@ -194,6 +238,13 @@ def _limpiar_encabezado(e: dict) -> dict:
         "monto_solicitado": monto(e.get("monto_solicitado")),
         "periodo_desde": fecha(e.get("periodo_desde")),
         "periodo_hasta": fecha(e.get("periodo_hasta")),
+        "titular": texto(e.get("titular")),
+        "tipo_tramite": _tipo_tramite(e.get("tipo_tramite")),
+        "decision_inicial": texto(e.get("decision_inicial")).removesuffix(".0"),
+        "decision_firmada": _si_no(e.get("decision_firmada")),
+        "estado_cuenta": _si_no(e.get("estado_cuenta")),
+        "devolucion": monto(e.get("devolucion")) if monto(e.get("devolucion")) is not None else (
+            None if _si_no(e.get("devolucion")) is None else 0.0),
     }
 
 
@@ -227,6 +278,16 @@ def leer_liquidaciones(ruta: Path, hojas: dict) -> list[dict]:
         if normalizar(factura["proveedor"]).startswith("TOTAL") or normalizar(factura["descripcion"]).startswith("TOTAL"):
             continue
         grupo["facturas"].append(factura)
+    movimientos = []
+    hoja_mov = _hoja(hojas, "Movimientos bancarios", "Movimientos", "Estado de cuenta")
+    if hoja_mov is not None:
+        for fila in _tabla(hoja_mov, COLUMNAS_MOVIMIENTO, minimo=2):
+            m = monto(fila.get("monto"))
+            if m:
+                movimientos.append({"fecha": fecha(fila.get("fecha")), "descripcion": texto(fila.get("descripcion")),
+                                    "monto": abs(m), "fila": fila["_fila"]})
+    for g in grupos.values():  # hoja vacía = no se adjuntaron movimientos
+        g["movimientos"] = movimientos if movimientos else None
     return [g for g in grupos.values() if g["facturas"]]
 
 
@@ -276,6 +337,8 @@ def leer_arqueos(ruta: Path, hojas: dict) -> list[dict]:
             "vales": sum(p["monto"] for p in pendientes if es_vale(p)) or (monto(enc.get("vales")) or 0.0),
             "detalle_efectivo": efectivo_detalle,
             "detalle_pendientes": pendientes,
+            "tipo_arqueo": texto(enc.get("tipo_arqueo")),
+            "fecha_reposicion": fecha(enc.get("fecha_reposicion")),
         }]
 
     # Formato plano (CSV): una fila por arqueo
@@ -291,6 +354,8 @@ def leer_arqueos(ruta: Path, hojas: dict) -> list[dict]:
                 "efectivo": monto(fila.get("efectivo")) or 0.0,
                 "pendientes_facturas": monto(fila.get("pendientes")) or 0.0,
                 "vales": monto(fila.get("vales")) or 0.0,
+                "tipo_arqueo": texto(fila.get("tipo_arqueo")),
+                "fecha_reposicion": fecha(fila.get("fecha_reposicion")),
                 "detalle_efectivo": [],
                 "detalle_pendientes": [],
             })

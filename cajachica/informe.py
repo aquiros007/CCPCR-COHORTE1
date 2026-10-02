@@ -8,42 +8,14 @@ from openpyxl.styles import Font, PatternFill
 
 from .db import BaseDatos
 from .reglas import REGLAS
+from .verificacion import ACCIONES, AVISO_ART_23
 from .reporte import AZUL, FMT_FECHA, FMT_MONTO, _pares, _tabla, _titulo
 
-ACCIONES = {
-    "DUPLICADO_EXACTO": "Excluir del reintegro. Solicitar explicación escrita al custodio.",
-    "POSIBLE_DUPLICADO": "Pedir ambos comprobantes originales y confirmar que son compras distintas.",
-    "PENDIENTE_YA_LIQUIDADO": "Retirar del arqueo y recalcular; investigar el faltante real.",
-    "SIN_DATOS_INSTITUCION": "Excluir del reintegro. Solicitar al proveedor refacturar a nombre de la institución.",
-    "RECEPTOR_INCORRECTO": "Excluir del reintegro. La factura está a nombre de un tercero.",
-    "TIPO_DOCUMENTO": "Excluir del reintegro. Solicitar factura electrónica en lugar del tiquete.",
-    "SIN_CLAVE": "Solicitar la clave numérica o el XML de la factura.",
-    "CLAVE_INVALIDA": "Verificar la factura en el portal de Hacienda.",
-    "CLAVE_ILEGIBLE": "Pedir al custodio corregir el formato de la clave y reenviar.",
-    "INCONSISTENCIA_CLAVE": "Verificar la factura en el portal de Hacienda; posible alteración.",
-    "EXCEDE_LIMITE": "Excluir del reintegro o tramitar por compras ordinarias.",
-    "GASTO_PROHIBIDO": "Excluir del reintegro; el custodio debe reponer el monto.",
-    "CONFLICTO_INTERES": "Excluir del reintegro y escalar a Auditoría Interna.",
-    "FRACCIONAMIENTO": "Revisar si la compra debió tramitarse por proveeduría.",
-    "DIFERENCIA_REINTEGRO": "Ajustar el monto solicitado al total de facturas válidas.",
-    "EXCEDE_FONDO": "Revisar el fondo asignado y el origen del exceso.",
-    "FALTANTE_ARQUEO": "Solicitar reposición inmediata al custodio y justificación escrita.",
-    "SOBRANTE_ARQUEO": "Identificar el comprobante o ingreso no registrado.",
-    "CAJA_NO_REGISTRADA": "Confirmar el código de caja o registrar la unidad en el catálogo.",
-    "CAJA_INACTIVA": "Confirmar por qué una caja inactiva sigue operando.",
-    "CUSTODIO_NO_AUTORIZADO": "Confirmar cambio de custodio y actualizar el catálogo.",
-    "APROBADOR_NO_AUTORIZADO": "Obtener la aprobación de un aprobador autorizado.",
-    "SIN_AUTORIZACION": "Obtener la aprobación antes de reintegrar.",
-    "AUTOAPROBACION": "Obtener aprobación de la jefatura (segregación de funciones).",
-    "CATEGORIA_NO_AUTORIZADA": "Reclasificar o justificar; si no procede, excluir.",
-    "REQUIERE_JUSTIFICACION": "Solicitar justificación del fin institucional.",
-    "FACTURA_VENCIDA": "Justificar la presentación tardía o excluir.",
-    "FECHA_FUTURA": "Verificar la fecha; posible error o documento alterado.",
-    "ERROR_CALCULO": "Verificar montos contra el comprobante original.",
-    "VALE_VENCIDO": "Exigir la liquidación del vale o su devolución.",
-    "PENDIENTE_VENCIDO": "Incluir en la próxima liquidación o justificar.",
-}
 ORDEN = {"ALTA": 0, "MEDIA": 1, "BAJA": 2}
+
+
+def _rango_gravedad(g: str) -> int:
+    return 3 if g.startswith("Muy grave") else 2 if g.startswith("Grave") else 1 if g.startswith("Leve") else 0
 
 
 def generar_informe(ruta_db: Path, politica: dict, desde: date, hasta: date, destinos: list[Path],
@@ -58,20 +30,27 @@ def generar_informe(ruta_db: Path, politica: dict, desde: date, hasta: date, des
     liqs = db.consultar("SELECT * FROM liquidaciones WHERE fecha BETWEEN ? AND ?", rango)
     arqs = db.consultar("SELECT * FROM arqueos WHERE fecha BETWEEN ? AND ?", rango)
     hall_fact = db.consultar(f"""
-        SELECT h.severidad, h.regla, h.detalle, f.id AS factura_id, f.caja, f.fila, f.fecha, f.proveedor,
+        SELECT h.severidad, h.regla, h.detalle, h.gravedad, h.articulo, f.id AS factura_id, f.caja, f.fila, f.fecha, f.proveedor,
                f.cedula_proveedor, f.consecutivo, f.clave, f.descripcion, f.total_crc, f.estado,
                l.numero AS liquidacion, l.custodio, l.fecha AS fecha_liq, a.nombre AS archivo
         FROM hallazgos h JOIN facturas f ON f.id = h.factura_id
         JOIN liquidaciones l ON l.id = h.liquidacion_id JOIN archivos a ON a.id = h.archivo_id
         WHERE l.fecha BETWEEN ? AND ? AND h.severidad IN ({marcas})""", rango + sevs)
     hall_gen = db.consultar(f"""
-        SELECT h.severidad, h.regla, h.detalle, h.monto, h.caja, h.origen, l.numero AS liquidacion,
+        SELECT h.severidad, h.regla, h.detalle, h.gravedad, h.articulo, h.monto, h.caja, h.origen, l.numero AS liquidacion,
                COALESCE(l.custodio, q.custodio) AS custodio, COALESCE(l.fecha, q.fecha) AS fecha, a.nombre AS archivo
         FROM hallazgos h LEFT JOIN liquidaciones l ON l.id = h.liquidacion_id
         LEFT JOIN arqueos q ON q.id = h.arqueo_id JOIN archivos a ON a.id = h.archivo_id
         WHERE h.factura_id IS NULL AND COALESCE(l.fecha, q.fecha) BETWEEN ? AND ? AND h.severidad IN ({marcas})""",
                           rango + sevs)
+    verif = db.consultar("""
+        SELECT v.caja, v.control, v.articulo, v.estado FROM verificaciones v
+        LEFT JOIN liquidaciones l ON l.id = v.liquidacion_id LEFT JOIN arqueos q ON q.id = v.arqueo_id
+        WHERE COALESCE(l.fecha, q.fecha) BETWEEN ? AND ?""", rango)
+    ult_arqueo = {r["caja"]: r["f"] for r in db.consultar("SELECT caja, MAX(fecha) f FROM arqueos GROUP BY caja")}
+    comprobantes = db.consultar("SELECT * FROM comprobantes")
     db.cerrar()
+    art = lambda h: h.get("articulo") or refs.get(h["regla"], "")
 
     unidad = lambda c: (catalogo.get(c) or {}).get("unidad", "")
     responsable = lambda c, alterno="": (catalogo.get(c) or {}).get("responsable") or alterno
@@ -89,7 +68,8 @@ def generar_informe(ruta_db: Path, politica: dict, desde: date, hasta: date, des
             d["archivo"], d["fila"], d["fecha"] and date.fromisoformat(d["fecha"]), d["proveedor"], d["cedula_proveedor"],
             d["consecutivo"], d["clave"], d["descripcion"], d["total_crc"], d["estado"],
             "\n".join(f"• [{x['severidad']}] {REGLAS.get(x['regla'], x['regla'])}: {x['detalle']}" for x in hs),
-            "\n".join(sorted({refs[x["regla"]] for x in hs if refs.get(x["regla"])})),
+            max((x["gravedad"] or "" for x in hs), key=_rango_gravedad) or "—",
+            "\n".join(sorted({art(x) for x in hs if art(x)})),
             "\n".join(dict.fromkeys(ACCIONES[x["regla"]] for x in hs if x["regla"] in ACCIONES)),
         ])
     filas_docs.sort(key=lambda r: (ORDEN[r[0]], r[1], str(r[4]), r[6] or 0))
@@ -98,7 +78,7 @@ def generar_informe(ruta_db: Path, politica: dict, desde: date, hasta: date, des
         h["severidad"], h["caja"], unidad(h["caja"]), responsable(h["caja"], h["custodio"]),
         "Arqueo" if h["origen"] == "arqueo" else f"Liquidación {h['liquidacion']}", h["archivo"],
         h["fecha"] and date.fromisoformat(h["fecha"]), REGLAS.get(h["regla"], h["regla"]), h["detalle"], h["monto"],
-        refs.get(h["regla"], ""), ACCIONES.get(h["regla"], ""),
+        h["gravedad"] or "—", art(h), ACCIONES.get(h["regla"], ""),
     ] for h in hall_gen], key=lambda r: (ORDEN[r[0]], r[1]))
 
     # ---- resumen por unidad
@@ -168,9 +148,21 @@ def generar_informe(ruta_db: Path, politica: dict, desde: date, hasta: date, des
         conteo[h["regla"]][0] += 1; conteo[h["regla"]][1] += h["total_crc"] or 0
     for h in hall_gen:
         conteo[h["regla"]][0] += 1; conteo[h["regla"]][1] += abs(h["monto"] or 0)
-    for i, (regla, (n, m)) in enumerate(sorted(conteo.items(), key=lambda x: -x[1][0])[:15], fila + 2):
+    top = sorted(conteo.items(), key=lambda x: -x[1][0])[:15]
+    for i, (regla, (n, m)) in enumerate(top, fila + 2):
         ws.cell(row=i, column=1, value=REGLAS.get(regla, regla))
         ws.cell(row=i, column=2, value=f"{n} casos · ₡{m:,.0f}")
+    ws.cell(row=fila + len(top) + 3, column=1, value=AVISO_ART_23).font = Font(italic=True, color="666666")
+
+    # ---- lista de verificación consolidada: cuántos documentos cumplen cada control
+    ws = wb.create_sheet("Lista de verificación")
+    por_control = defaultdict(lambda: defaultdict(int))
+    for v in verif:
+        por_control[(v["control"], v["articulo"])][v["estado"]] += 1
+    estados = ["CUMPLE", "NO CUMPLE", "NO SE PUEDE VERIFICAR", "NO APLICA"]
+    _tabla(ws, 1, ["Control", "Artículo"] + estados,
+           [[c, a] + [por_control[(c, a)][e] for e in estados] for (c, a) in por_control],
+           [60, 26, 11, 12, 14, 11])
 
     ws = wb.create_sheet("Por unidad")
     _tabla(ws, 1, ["Semáforo", "Código", "Unidad de negocio", "Responsable", "Fondo", "Liquidaciones", "Gasto presentado",
@@ -185,18 +177,47 @@ def generar_informe(ruta_db: Path, politica: dict, desde: date, hasta: date, des
     ws = wb.create_sheet("Documentos incumplidos")
     _tabla(ws, 1, ["Severidad", "Código", "Unidad", "Responsable", "Liquidación", "Archivo", "Fila", "Fecha factura",
                    "Proveedor", "Cédula proveedor", "N° factura", "Clave numérica", "Descripción", "Monto", "Estado",
-                   "Incumplimientos", "Norma de la política", "Acción requerida"], filas_docs,
-           [10, 11, 22, 20, 12, 30, 6, 12, 26, 14, 22, 20, 30, 12, 12, 70, 22, 40],
+                   "Incumplimientos", "Gravedad sugerida", "Artículo", "Acción requerida"], filas_docs,
+           [10, 11, 22, 20, 12, 30, 6, 12, 26, 14, 22, 20, 30, 12, 12, 70, 20, 26, 40],
            col_estado=1, montos=(14,), fechas=(8,))
 
     ws = wb.create_sheet("Liquidaciones y arqueos")
     _tabla(ws, 1, ["Severidad", "Código", "Unidad", "Responsable", "Documento", "Archivo", "Fecha", "Incumplimiento",
-                   "Detalle", "Monto", "Norma de la política", "Acción requerida"], filas_gen,
-           [10, 11, 22, 20, 18, 30, 12, 34, 70, 13, 22, 40], col_estado=1, montos=(10,), fechas=(7,))
+                   "Detalle", "Monto", "Gravedad sugerida", "Artículo", "Acción requerida"], filas_gen,
+           [10, 11, 22, 20, 18, 30, 12, 34, 70, 13, 20, 26, 40], col_estado=1, montos=(10,), fechas=(7,))
 
     sin = [[r[1], r[2], r[3], (catalogo.get(r[1]) or {}).get("correo", ""), r[4]] for r in filas_unidad if r[0] == "SIN ENTREGA"]
     ws = wb.create_sheet("Sin entrega")
     _tabla(ws, 1, ["Código", "Unidad de negocio", "Responsable", "Correo", "Fondo"], sin, [11, 30, 26, 30, 14], montos=(5,))
+
+    # ---- apertura y catálogo (arts. 4, 5, 13 b)
+    from .config import problemas_catalogo
+    ws = wb.create_sheet("Apertura y catálogo")
+    _tabla(ws, 1, ["FUC", "Problema", "Artículo"],
+           [[p["codigo"], p["problema"], p["articulo"]] for p in problemas_catalogo(politica)], [24, 90, 16])
+
+    # ---- arqueos periódicos (arts. 14 y 17)
+    maximo = int((politica.get("plazos") or {}).get("dias_maximos_entre_arqueos", 30))
+    sin_arqueo = []
+    for c in sorted(set(catalogo) | set(ult_arqueo)):
+        ultimo = ult_arqueo.get(c)
+        dias = (hasta - date.fromisoformat(ultimo[:10])).days if ultimo else None
+        if dias is None or dias > maximo:
+            sin_arqueo.append([c, unidad(c), responsable(c), ultimo and date.fromisoformat(ultimo[:10]),
+                               "Nunca" if dias is None else f"{dias} días"])
+    ws = wb.create_sheet("Sin arqueo reciente")
+    _tabla(ws, 1, ["Código", "Unidad de negocio", "Responsable", "Último arqueo", f"Sin arqueo (máx. {maximo} días)"],
+           sin_arqueo, [11, 30, 26, 14, 22], fechas=(4,))
+
+    # ---- comprobantes electrónicos de proveedores
+    ws = wb.create_sheet("Comprobantes proveedores")
+    import json as _json
+    filas_comp = [[c["estado"], c["emisor_nombre"], c["emisor_cedula"], c["consecutivo"], c["fecha"], c["total"],
+                   c["estado_hacienda"], "\n".join(f"{x['control']}: {x['detalle']}" for x in _json.loads(c["controles"])
+                                                  if x["estado"] != "CUMPLE"), c["clave"]]
+                  for c in sorted(comprobantes, key=lambda c: c["estado"])]
+    _tabla(ws, 1, ["Estado", "Proveedor", "Cédula", "N° factura", "Fecha", "Total", "Hacienda", "Controles pendientes",
+                   "Clave"], filas_comp, [22, 30, 14, 22, 11, 13, 14, 70, 54], montos=(6,))
 
     escritos = []
     for d in destinos:

@@ -6,10 +6,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from .verificacion import ACCIONES, AVISO_ART_23
+
 AZUL = "1F3A5F"
 COLORES_ESTADO = {
     "RECHAZADA": "F8D7DA", "OBSERVADA": "FFF3CD", "OK": "D4EDDA",
     "ALTA": "F8D7DA", "MEDIA": "FFF3CD", "BAJA": "E2E3E5",
+    "CUMPLE": "D4EDDA", "NO CUMPLE": "F8D7DA", "NO SE PUEDE VERIFICAR": "FFF3CD", "NO APLICA": "E2E3E5",
 }
 BORDE = Border(bottom=Side(style="thin", color="DDDDDD"))
 FMT_MONTO = '"₡"#,##0.00'
@@ -62,6 +65,32 @@ def _pares(ws, fila, pares):
     return fila
 
 
+def _hoja_hallazgos(ws, filas):
+    """Tabla del reglamento: n.º, documento, hallazgo, artículo, gravedad sugerida, acción recomendada."""
+    orden = {"ALTA": 0, "MEDIA": 1, "BAJA": 2}
+    filas = sorted(filas, key=lambda x: orden[x[0]["severidad"]])
+    datos = [[i, h["severidad"], doc, f"{h['titulo']}: {h['detalle']}", h.get("articulo", ""),
+              h.get("gravedad", "") or "—", ACCIONES.get(h["regla"], ""), monto]
+             for i, (h, doc, monto) in enumerate(filas, 1)]
+    _tabla(ws, 1, ["N.º", "Prioridad", "Documento", "Hallazgo", "Artículo", "Gravedad sugerida", "Acción recomendada",
+                   "Monto ₡"], datos, [5, 10, 40, 70, 30, 22, 44, 13], col_estado=2, montos=(8,))
+
+
+def _hojas_verificacion(wb, documentos):
+    ws = wb.create_sheet("Lista de verificación")
+    filas = [[doc, it["grupo"], it["control"], it["articulo"], it["estado"], it["detalle"]]
+             for doc, r in documentos for it in r.get("verificacion", [])]
+    _tabla(ws, 1, ["Documento", "Área", "Control", "Artículo", "Estado", "Detalle"], filas,
+           [16, 24, 52, 22, 22, 80], col_estado=5)
+    cumplen = [[doc, it["control"], it["articulo"]] for doc, r in documentos for it in r.get("verificacion", [])
+               if it["estado"] == "CUMPLE"]
+    ws = wb.create_sheet("Puntos que cumplen")
+    _tabla(ws, 1, ["Documento", "Control", "Artículo"], cumplen, [16, 60, 26])
+    ws = wb.create_sheet("Documentos pendientes")
+    pend = [[doc, p] for doc, r in documentos for p in r.get("pendientes", [])]
+    _tabla(ws, 1, ["Documento", "Qué falta para completar la revisión"], pend, [16, 120])
+
+
 def informe_liquidaciones(resultados: list[dict], archivo: str, destino: Path) -> Path:
     wb = Workbook()
     ws = wb.active
@@ -72,7 +101,7 @@ def informe_liquidaciones(resultados: list[dict], archivo: str, destino: Path) -
     for res in resultados:
         enc, r = res["encabezado"], res["resumen"]
         fila = _pares(ws, fila, [
-            ("Caja", enc["caja"]), ("Custodio", enc["custodio"]), ("N° de liquidación", enc["numero"]),
+            ("Caja (FUC)", enc["caja"]), ("Persona encargada", enc["custodio"]), ("N° de liquidación", enc["numero"]),
             ("Fecha de liquidación", enc["fecha_liquidacion"], FMT_FECHA),
             ("ESTADO", r["estado"]),
             ("Facturas presentadas", r["n_facturas"]),
@@ -96,6 +125,10 @@ def informe_liquidaciones(resultados: list[dict], archivo: str, destino: Path) -
     ], fila + 2):
         ws.cell(row=i, column=1, value=t)
 
+    ws.cell(row=fila + 7, column=1, value=AVISO_ART_23).font = Font(italic=True, color="666666")
+
+    _hojas_verificacion(wb, [(r["encabezado"]["numero"], r) for r in resultados])
+
     ws = wb.create_sheet("Factura por factura")
     filas = []
     for res in resultados:
@@ -111,15 +144,14 @@ def informe_liquidaciones(resultados: list[dict], archivo: str, destino: Path) -
     ws = wb.create_sheet("Hallazgos")
     filas = []
     for res in resultados:
+        n = res["encabezado"]["numero"]
         for h in res["hallazgos_generales"]:
-            filas.append([h["severidad"], res["encabezado"]["numero"], "Liquidación", h["titulo"], h["detalle"], h["monto"]])
+            filas.append([h, f"Liquidación {n}", h["monto"]])
         for f in res["facturas"]:
+            doc = f"Liq. {n} · fila {f['fila']} · {f['proveedor']} · factura {f['consecutivo'] or '—'}"
             for h in f["hallazgos"]:
-                filas.append([h["severidad"], res["encabezado"]["numero"], f"Fila {f['fila']} · {f['proveedor']}",
-                              h["titulo"], h["detalle"], h["monto"] if h["monto"] is not None else f["total_crc"]])
-    filas.sort(key=lambda x: {"ALTA": 0, "MEDIA": 1, "BAJA": 2}[x[0]])
-    _tabla(ws, 1, ["Severidad", "Liquidación", "Referencia", "Hallazgo", "Detalle", "Monto ₡"],
-           filas, [10, 12, 34, 38, 90, 14], col_estado=1, montos=(6,))
+                filas.append([h, doc, h["monto"] if h["monto"] is not None else f["total_crc"]])
+    _hoja_hallazgos(ws, filas)
 
     destino.parent.mkdir(parents=True, exist_ok=True)
     wb.save(destino)
@@ -141,10 +173,11 @@ def informe_arqueos(resultados: list[dict], archivo: str, destino: Path) -> Path
             ("Vales / adelantos", a["vales"], FMT_MONTO),
             ("Diferencia (+ sobrante / − faltante)", a["diferencia"], FMT_MONTO),
         ]) + 1
+    ws.cell(row=fila + 1, column=1, value=AVISO_ART_23).font = Font(italic=True, color="666666")
+    _hojas_verificacion(wb, [(f"Arqueo {a['caja']}", a) for a in resultados])
     ws = wb.create_sheet("Hallazgos")
-    filas = [[h["severidad"], a["caja"], h["titulo"], h["detalle"], h["monto"]] for a in resultados for h in a["hallazgos"]]
-    _tabla(ws, 1, ["Severidad", "Caja", "Hallazgo", "Detalle", "Monto ₡"], filas, [10, 12, 40, 100, 14],
-           col_estado=1, montos=(5,))
+    _hoja_hallazgos(ws, [[h, f"Arqueo {a['caja']} del {a['fecha']:%d/%m/%Y}" if a["fecha"] else f"Arqueo {a['caja']}",
+                          h["monto"]] for a in resultados for h in a["hallazgos"]])
     ws = wb.create_sheet("Pendientes")
     filas = [[a["caja"], p["tipo"], p["fecha"], p["numero"], p["beneficiario"], p["descripcion"], p["monto"]]
              for a in resultados for p in a["detalle_pendientes"]]

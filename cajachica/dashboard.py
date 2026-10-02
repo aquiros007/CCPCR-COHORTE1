@@ -43,7 +43,20 @@ def _datos(db: BaseDatos, catalogo: dict) -> dict:
                  "activa": i["activa"], "ult_liq": (ultimas.get(c) or {}).get("ult_liq"),
                  "n_liq": (ultimas.get(c) or {}).get("n_liq", 0), "ult_arq": ult_arq.get(c)}
                 for c, i in catalogo.items()]
-    return {"unidades": unidades, "facturas": facturas, "liquidaciones": liquidaciones, "arqueos": arqueos, "hallazgos": hallazgos,
+    en_liq = {r["clave"]: r for r in db.consultar(
+        "SELECT f.clave, l.numero AS liquidacion, f.fila, f.caja FROM facturas f JOIN liquidaciones l ON l.id=f.liquidacion_id "
+        "WHERE f.clave <> ''")}
+    comprobantes = []
+    for c in db.consultar("SELECT * FROM comprobantes ORDER BY fecha_actualizacion DESC"):
+        uso = en_liq.get(c["clave"]) or {}
+        comprobantes.append({
+            "clave": c["clave"], "estado": c["estado"], "proveedor": c["emisor_nombre"], "cedula": c["emisor_cedula"],
+            "consecutivo": c["consecutivo"], "fecha": c["fecha"], "total": c["total"], "impuesto": c["impuesto"],
+            "moneda": c["moneda"], "hacienda": c["estado_hacienda"], "descripcion": c["descripcion"],
+            "controles": json.loads(c["controles"] or "[]"), "recibido": c["fecha_recepcion"],
+            "caja": uso.get("caja", ""), "liquidacion": uso.get("liquidacion", ""), "fila": uso.get("fila"),
+        })
+    return {"unidades": unidades, "comprobantes": comprobantes, "facturas": facturas, "liquidaciones": liquidaciones, "arqueos": arqueos, "hallazgos": hallazgos,
             "generado": datetime.now().strftime("%d/%m/%Y %H:%M")}
 
 
@@ -169,6 +182,15 @@ textarea { font: inherit; padding: 8px; border: 1px solid var(--border); border-
 .pill.V-INFO { background: var(--warning-bg); } .pill.V-INFO::before { background: var(--warning); }
 .pill.T-ingreso { background: var(--neutral-bg); } .pill.T-ingreso::before { background: var(--series-1); }
 .pill.T-vigencia { background: var(--good-bg); } .pill.T-vigencia::before { background: var(--good); }
+.pill.LISTO, .pill.D-APROBADO { background: var(--good-bg); } .pill.LISTO::before, .pill.D-APROBADO::before { background: var(--good); }
+.pill.DIFERENCIAS, .pill.D-RECHAZADO { background: var(--critical-bg); } .pill.DIFERENCIAS::before, .pill.D-RECHAZADO::before { background: var(--critical); }
+.pill.INCOMPLETO, .pill.MANUAL, .pill.D-DEVUELTO { background: var(--warning-bg); } .pill.INCOMPLETO::before, .pill.MANUAL::before, .pill.D-DEVUELTO::before { background: var(--warning); }
+.pill.T-aprobacion { background: var(--good-bg); } .pill.T-aprobacion::before { background: var(--accent); }
+.controles { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 12px; }
+.controles li { display: flex; gap: 6px; align-items: baseline; }
+.marca { font-weight: 700; width: 14px; flex: none; text-align: center; }
+.marca.ok { color: var(--good); } .marca.no { color: var(--critical); } .marca.nv { color: var(--warning); }
+details summary { cursor: pointer; color: var(--series-1); font-size: 12px; font-weight: 600; }
 .pill.T-validacion { background: var(--warning-bg); } .pill.T-validacion::before { background: var(--warning); }
 </style>
 
@@ -206,6 +228,23 @@ textarea { font: inherit; padding: 8px; border: 1px solid var(--border); border-
       <textarea id="valComentario" minlength="10" maxlength="1000" required></textarea></label>
     <div class="error" id="valError" hidden></div>
     <div class="acciones"><button class="btn sec" type="button" id="valCancelar">Cancelar</button><button class="btn" type="submit" id="valBtn">Registrar validación</button></div>
+  </form>
+</div>
+
+<div class="capa" id="dlgAprobar" hidden role="dialog" aria-modal="true" aria-labelledby="aprTitulo">
+  <form class="panel" id="aprForm">
+    <h2 id="aprTitulo">Decidir sobre el comprobante</h2>
+    <div class="resumen-h" id="aprResumen"></div>
+    <div class="campo">Decisión
+      <div class="opciones">
+        <label><input type="radio" name="dec" value="APROBADO" required> Aprobar: los tres archivos coinciden y la compra procede</label>
+        <label><input type="radio" name="dec" value="DEVUELTO"> Devolver al proveedor para que corrija o complete</label>
+        <label><input type="radio" name="dec" value="RECHAZADO"> Rechazar el comprobante</label>
+      </div></div>
+    <label class="campo" for="aprComentario">Fundamento <span class="ayuda">Obligatorio. Si aprueba un comprobante con diferencias, explique por qué se aceptan.</span>
+      <textarea id="aprComentario" maxlength="1000"></textarea></label>
+    <div class="error" id="aprError" hidden></div>
+    <div class="acciones"><button class="btn sec" type="button" id="aprCancelar">Cancelar</button><button class="btn" type="submit" id="aprBtn">Registrar decisión</button></div>
   </form>
 </div>
 
@@ -259,6 +298,18 @@ textarea { font: inherit; padding: 8px; border: 1px solid var(--border); border-
   </div>
 
   <div class="grid">
+    <div class="card full"><h2>Aprobación de comprobantes de proveedores</h2>
+      <p class="sub" style="margin:0 0 10px">Cada factura cruza el PDF, el XML y la respuesta de Hacienda que cargó el proveedor.
+        Deciden las personas registradas con el rol Jefatura / aprobador.</p>
+      <div class="barra-tabla">
+        <select id="cEstado"><option value="">Todos los comprobantes</option><option value="pend">Pendientes de decisión</option>
+          <option>LISTO PARA APROBACIÓN</option><option>CON DIFERENCIAS</option><option>REVISIÓN MANUAL</option><option>INCOMPLETO</option></select>
+        <input id="cBuscar" placeholder="Buscar proveedor, cédula o número…" style="flex:1;min-width:200px">
+      </div>
+      <div class="tabla" id="tComprobantes"></div></div>
+  </div>
+
+  <div class="grid">
     <div class="card full"><h2>Hallazgos</h2>
       <div class="barra-tabla">
         <select id="fSev"><option value="">Todas las severidades</option><option>ALTA</option><option>MEDIA</option><option>BAJA</option></select>
@@ -277,7 +328,7 @@ textarea { font: inherit; padding: 8px; border: 1px solid var(--border); border-
     <div class="card full"><h2>Bitácora de revisión</h2>
       <p class="sub" style="margin:0 0 10px">Quién ingresó, qué confirmó y qué evidencia validó. Solo la ven el administrador y los editores del dashboard.</p>
       <div class="barra-tabla">
-        <select id="bTipo"><option value="">Todos los registros</option><option value="ingreso">Ingresos</option><option value="vigencia">Confirmaciones de vigencia</option><option value="validacion">Validaciones de evidencia</option></select>
+        <select id="bTipo"><option value="">Todos los registros</option><option value="ingreso">Ingresos</option><option value="vigencia">Confirmaciones de vigencia</option><option value="validacion">Validaciones de evidencia</option><option value="aprobacion">Decisiones sobre comprobantes</option></select>
         <input id="bBuscar" placeholder="Buscar persona, caja, motivo…" style="flex:1;min-width:200px">
         <button class="btn sec" type="button" id="bActualizar">Actualizar</button>
         <button class="btn sec" type="button" id="bDescargar" hidden>Descargar CSV</button>
@@ -418,6 +469,8 @@ function render() {
     kpi("Hallazgos graves abiertos", alta, `${hal.length} hallazgos en total`),
     kpi("Duplicados detectados", dup.length, fmt(dup.reduce((s, h) => s + (h.monto || 0), 0)) + " en riesgo de doble pago"),
     kpi("Hallazgos sin validar", sinValidar, "ALTA y MEDIA pendientes de revisión"),
+    kpi("Comprobantes por decidir", D.comprobantes.filter(c => c.estado !== "INCOMPLETO" && !(S.aprob[c.clave] || []).length).length,
+        `${D.comprobantes.filter(c => c.estado === "LISTO PARA APROBACIÓN").length} listos · ${D.comprobantes.filter(c => c.estado === "CON DIFERENCIAS").length} con diferencias`),
     kpi("Faltantes en arqueos", corto(faltante), `${arq.length} arqueos · ${arq.filter(a => a.diferencia < 0).length} con faltante`),
   ].join("");
 
@@ -438,6 +491,8 @@ function render() {
     ["Proveedor", h => esc(h.proveedor)], ["Hallazgo", h => `<b>${esc(h.titulo)}</b><br><span class="sub">${esc(h.detalle)}</span>`],
     ["Monto", h => fmt(h.monto), true], ["Validación", celdaValidacion],
   ], hs, "Sin hallazgos para el filtro");
+
+  renderComprobantes();
 
   tabla("#tDuplicados", [
     ["Tipo", h => pill(h.severidad) + " " + esc(h.titulo)], ["Caja", h => esc(h.caja)], ["Liquidación", h => esc(h.liquidacion)],
@@ -477,8 +532,14 @@ const MOTIVOS = ["Revisión semanal de liquidaciones", "Validación de evidencia
 const RESULTADOS = { CONFIRMADO: "Incumplimiento confirmado", JUSTIFICADO: "Justificado: se acepta",
   INFO: "Requiere más información", FALSO: "Falso positivo" };
 const VIGENCIA = { AL_DIA: "Al día", DESACTUALIZADA: "Faltan entregas recientes", INCONSISTENTE: "Datos inconsistentes" };
-const TIPOS = { ingreso: "Ingreso", vigencia: "Confirmación de vigencia", validacion: "Validación de evidencia" };
-const S = { U: null, DB: null, me: null, admin: false, sesion: null, vals: {}, eventosVal: [], perfiles: {}, bitacora: [], downloads: null };
+const TIPOS = { ingreso: "Ingreso", vigencia: "Confirmación de vigencia", validacion: "Validación de evidencia",
+                aprobacion: "Decisión sobre comprobante" };
+const S = { U: null, DB: null, me: null, admin: false, sesion: null, vals: {}, eventosVal: [], perfiles: {}, bitacora: [],
+            downloads: null, aprob: {}, eventosApr: [] };
+const DECISION = { APROBADO: "Aprobado", DEVUELTO: "Devuelto al proveedor", RECHAZADO: "Rechazado" };
+const CLASE_COMP = { "LISTO PARA APROBACIÓN": "LISTO", "CON DIFERENCIAS": "DIFERENCIAS", "INCOMPLETO": "INCOMPLETO", "REVISIÓN MANUAL": "MANUAL" };
+const esAprobador = () => S.sesion && S.sesion.rol === "Jefatura / aprobador";
+const porClaveComp = Object.fromEntries(D.comprobantes.map(c => [c.clave, c]));
 const mesActual = () => new Date().toISOString().slice(0, 7);
 const fh = s => { try { return new Date(s).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" }); } catch (e) { return s; } };
 const nombre = uid => (S.perfiles[uid] && S.perfiles[uid].name) || "Persona sin nombre visible";
@@ -548,7 +609,7 @@ $("#puertaForm").addEventListener("submit", async e => {
   $("#puerta").hidden = true; $("#app").hidden = false;
   $("#bitacora").hidden = !S.admin;
   render();
-  await cargarValidaciones();
+  await Promise.all([cargarValidaciones(), cargarAprobaciones()]);
   if (S.admin) cargarBitacora();
 });
 
@@ -571,6 +632,74 @@ async function cargarValidaciones() {
     render();
   } catch (err) { console.warn("No se pudieron leer las validaciones", err); }
 }
+
+// ---- comprobantes de proveedores
+function listaControles(c) {
+  const marca = e => e === "CUMPLE" ? '<span class="marca ok" aria-label="Cumple">✓</span>' : e === "NO CUMPLE"
+    ? '<span class="marca no" aria-label="No cumple">✗</span>' : '<span class="marca nv" aria-label="No se puede verificar">?</span>';
+  return `<ul class="controles">${c.controles.map(x => `<li>${marca(x.estado)}<span><b>${esc(x.control)}</b>${x.detalle ? " · " + esc(x.detalle) : ""}</span></li>`).join("")}</ul>`;
+}
+function renderComprobantes() {
+  const est = $("#cEstado").value, q = $("#cBuscar").value.toLowerCase();
+  const lista = D.comprobantes.filter(c => (!F.caja || !c.caja || c.caja === F.caja) &&
+      (!est || (est === "pend" ? c.estado !== "INCOMPLETO" && !(S.aprob[c.clave] || []).length : c.estado === est)) &&
+      (!q || [c.proveedor, c.cedula, c.consecutivo, c.clave].join(" ").toLowerCase().includes(q)));
+  tabla("#tComprobantes", [
+    ["Cruce", c => `<span class="pill ${CLASE_COMP[c.estado] || ""}">${esc(c.estado)}</span>`],
+    ["Proveedor", c => `<b>${esc(c.proveedor)}</b><div class="sub">${esc(c.cedula)}</div>`],
+    ["Factura", c => `${esc(c.consecutivo || "—")}<div class="sub">${fdate(c.fecha)}${c.liquidacion ? " · Liq. " + esc(c.liquidacion) + " fila " + c.fila : ""}</div>`],
+    ["Hacienda", c => esc(c.hacienda)],
+    ["Controles", c => { const ok = c.controles.filter(x => x.estado === "CUMPLE").length;
+      return `<details><summary>${ok} de ${c.controles.length} cumplen</summary>${listaControles(c)}</details>`; }],
+    ["Total", c => fmt(c.total), true],
+    ["Decisión", c => { const a = (S.aprob[c.clave] || [])[0];
+      const actual = a ? `<span class="pill D-${esc(a.decision)}">${esc(DECISION[a.decision] || a.decision)}</span><div class="sub">${esc(nombre(a.uid))} · ${esc(fh(a.ts))}</div>`
+                       : '<span class="sub">Sin decisión</span>';
+      return actual + (esAprobador() && c.estado !== "INCOMPLETO"
+        ? `<button class="btn-link" type="button" data-aprobar="${esc(c.clave)}">${a ? "Cambiar decisión" : "Decidir"}</button>` : ""); }],
+  ], lista, D.comprobantes.length ? "Sin comprobantes para el filtro" : "Aún no hay comprobantes de proveedores.");
+}
+$("#cEstado").onchange = renderComprobantes; $("#cBuscar").oninput = renderComprobantes;
+
+async function cargarAprobaciones() {
+  try {
+    S.eventosApr = await leerEventos("aprobaciones");
+    S.aprob = {};
+    S.eventosApr.forEach(v => (S.aprob[v.clave] ??= []).push(v));
+    S.perfiles = { ...S.perfiles, ...(await S.U.profiles([...new Set(S.eventosApr.map(v => v.uid))])) };
+    render();
+  } catch (err) { console.warn("No se pudieron leer las aprobaciones", err); }
+}
+
+let compActual = null;
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-aprobar]");
+  if (!b || !esAprobador()) return;
+  compActual = porClaveComp[b.dataset.aprobar];
+  if (!compActual) return;
+  const c = compActual;
+  $("#aprResumen").innerHTML = `<span class="pill ${CLASE_COMP[c.estado] || ""}">${esc(c.estado)}</span> <b>${esc(c.proveedor)}</b> · ${esc(c.consecutivo)} · ${fmt(c.total)}<br><span class="sub">${esc(c.descripcion)}</span>${listaControles(c)}`;
+  $("#aprForm").reset(); $("#aprError").hidden = true; $("#dlgAprobar").hidden = false;
+});
+$("#aprCancelar").onclick = () => { $("#dlgAprobar").hidden = true; };
+$("#aprForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const c = compActual, dec = new FormData(e.target).get("dec"), comentario = $("#aprComentario").value.trim();
+  if (comentario.length < 10) { $("#aprError").textContent = "Escriba el fundamento de la decisión (al menos 10 caracteres)."; $("#aprError").hidden = false; return; }
+  $("#aprBtn").disabled = true;
+  try {
+    await anexar("aprobaciones/" + S.me.id, { tipo: "aprobacion", ts: new Date().toISOString(), clave: c.clave, decision: dec,
+      comentario, rol: S.sesion.rol, corte: D.generado, estado_cruce: c.estado, proveedor_cedula: c.cedula, total: c.total });
+    $("#dlgAprobar").hidden = true;
+    await cargarAprobaciones();
+    if (S.admin) cargarBitacora();
+  } catch (err) {
+    $("#aprError").textContent = err && err.code === "invalid_argument"
+      ? "Su acceso no permite registrar decisiones. Pida permiso de Colaborador al administrador."
+      : "No se pudo registrar la decisión. Intente de nuevo.";
+    $("#aprError").hidden = false;
+  } finally { $("#aprBtn").disabled = false; }
+});
 
 // ---- validar un hallazgo
 let hallazgoActual = null;
@@ -629,7 +758,7 @@ async function cargarBitacora() {
   $("#bEstado").textContent = "Cargando bitácora…";
   try {
     const accesos = await leerEventos("accesos");
-    S.bitacora = [...accesos, ...S.eventosVal].sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
+    S.bitacora = [...accesos, ...S.eventosVal, ...S.eventosApr].sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
     S.perfiles = { ...S.perfiles, ...(await S.U.profiles([...new Set(S.bitacora.map(v => v.uid))])) };
     $("#bEstado").textContent = `${S.bitacora.length} registros de ${new Set(S.bitacora.map(v => v.uid)).size} personas.`;
     renderBitacora();
@@ -638,6 +767,8 @@ async function cargarBitacora() {
 function detalleEvento(v) {
   if (v.tipo === "ingreso") return [v.motivo, v.alcance && "Alcance: " + v.alcance].filter(Boolean).join(" · ");
   if (v.tipo === "vigencia") return [VIGENCIA[v.resultado] || v.resultado, v.comentario].filter(Boolean).join(" · ");
+  if (v.tipo === "aprobacion") { const c = porClaveComp[v.clave] || {};
+    return `${DECISION[v.decision] || v.decision} · ${c.proveedor || v.proveedor_cedula} ${c.consecutivo || ""} · cruce: ${v.estado_cruce} · ${v.comentario}`; }
   return `${RESULTADOS[v.resultado] || v.resultado} · ${v.caja}${v.liquidacion ? " Liq. " + v.liquidacion : ""}${v.fila ? " fila " + v.fila : ""} · ${(porClave[v.clave] || {}).titulo || v.regla} · ${v.comentario}`;
 }
 function filasBitacora() {
@@ -653,7 +784,7 @@ function renderBitacora() {
   ], filasBitacora(), "Sin registros para el filtro");
 }
 $("#bTipo").onchange = renderBitacora; $("#bBuscar").oninput = renderBitacora;
-$("#bActualizar").onclick = async () => { await cargarValidaciones(); await cargarBitacora(); };
+$("#bActualizar").onclick = async () => { await Promise.all([cargarValidaciones(), cargarAprobaciones()]); await cargarBitacora(); };
 $("#bDescargar").onclick = async () => {
   const q = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const filas = [["Fecha y hora", "Persona", "Registro", "Rol", "Detalle", "Corte revisado"].map(q).join(",")]

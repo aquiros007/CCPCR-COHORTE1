@@ -1,38 +1,71 @@
 # =====================================================================
-#  POLÍTICA DE CAJA CHICA — parámetros que usa el agente para auditar
-#  Edite los valores según la política vigente de la institución.
-#  Montos en colones (CRC) salvo que se indique otra moneda.
+#  POLÍTICA DE CAJA CHICA — Universidad Nacional (Costa Rica)
+#  Base: Reglamento de Cajas Chicas (modificaciones ACUE-355-2024 y ACUE-085-2025).
+#  Los montos límite, formatos y calendarios los define cada año el Programa de
+#  Gestión Financiera (PGF). Los valores marcados "PEDIR AL PGF" no se suponen:
+#  mientras estén vacíos, el control respectivo sale como NO SE PUEDE VERIFICAR.
 # =====================================================================
 
-# --- Datos de la institución (toda factura debe venir a nombre de ella) ---
+# --- Datos de la institución (toda factura debe venir a nombre de ella, art. 6 d) ---
 institucion:
-  nombre: "NOMBRE LEGAL DE LA INSTITUCIÓN"        # razón social exacta
-  nombres_alternativos: []                          # ej. ["NOMBRE COMERCIAL", "SIGLAS"]
-  cedula_juridica: "3-000-000000"                   # con o sin guiones
-  correo_facturacion: ""                            # opcional: correo receptor esperado
+  nombre: "Universidad Nacional"
+  nombres_alternativos: ["UNA", "Universidad Nacional de Costa Rica"]
+  cedula_juridica: "4-000-042150"                 # VERIFICAR con el PGF
+  correo_facturacion: ""
 
 # --- Carpeta repositorio (OneDrive / Google Drive sincronizado en esta Mac) ---
-# Ejemplos:
-#   OneDrive:     ~/Library/CloudStorage/OneDrive-Personal/CajaChica
-#   Google Drive: ~/Library/CloudStorage/GoogleDrive-correo@gmail.com/Mi unidad/CajaChica
 repositorio: "./repositorio"
 
-# --- Fondos asignados por caja (código de caja -> monto del fondo) ---
+# --- Fondos: el monto de cada caja (FUC) viene del catálogo; este es el valor si falta ---
 fondos:
   DEFAULT: 500000
 
-# --- Tipo de cambio por defecto para facturas en dólares (si la fila no trae uno) ---
 tipo_cambio_usd: 505
 
-# --- Límites ---
+# --- Apertura (arts. 4, 5, 13 b) ---
+apertura:
+  monto_licitacion_reducida: null         # PEDIR AL PGF: monto vigente de licitación reducida
+  porcentaje_tope_fondo: 10               # el fondo no supera el 10 % de ese monto
+  excepciones_varias_cajas: []            # FUC autorizados a tener más de una caja (ej. Feuna con visto bueno)
+
+# --- Límites de compra (arts. 3, 6 a) ---
 limites:
-  monto_maximo_por_factura: 10000        # ningún gasto individual puede superar este monto
-  monto_maximo_por_proveedor_dia: 10000   # suma por proveedor en la ventana (fraccionamiento); igual al tope por factura
-  ventana_fraccionamiento_dias: 3         # días para agrupar compras al mismo proveedor
-  antiguedad_maxima_factura_dias: 30      # días máximos entre fecha de factura y fecha de liquidación
-  porcentaje_minimo_para_liquidar: 0      # % del fondo que debe estar gastado para liquidar (0 = sin mínimo)
-  tolerancia_arqueo: 500                  # diferencia aceptable en el arqueo (faltante/sobrante)
-  dias_maximos_vale_pendiente: 5          # días máximos que un vale/adelanto puede estar sin liquidar
+  monto_maximo_por_factura: 10000         # monto máximo de caja chica por compra
+  monto_maximo_por_proveedor_dia: 10000   # fragmentación: compras al mismo proveedor en la ventana
+  ventana_fraccionamiento_dias: 3
+  antiguedad_maxima_factura_dias: 30
+  porcentaje_minimo_para_liquidar: 0
+  tolerancia_arqueo: 500
+  dias_maximos_vale_pendiente: 5          # se cuentan en días HÁBILES (art. 15)
+
+# --- Plazos y controles (arts. 8, 14, 15, 17, 18) — días hábiles ---
+plazos:
+  reintegro_mensual_dia_habil: 5          # a más tardar el 5.º día hábil del mes siguiente
+  vales_dias_habiles: 5
+  sobrante_dias_habiles: 1                # reintegrar sobrantes a más tardar el día hábil siguiente
+  faltante_dias_habiles: 0                # faltantes: cubiertos el mismo día
+  fecha_limite_liquidacion_final: null    # PEDIR AL PGF: calendario de cierre anual (AAAA-MM-DD)
+  dias_maximos_entre_arqueos: 30          # arqueos periódicos: alerta si una caja pasa más tiempo sin arqueo
+
+# Feriados de Costa Rica (para contar días hábiles). VERIFICAR contra el calendario del PGF y los cierres de la UNA.
+feriados:
+  - 2026-01-01
+  - 2026-04-02
+  - 2026-04-03
+  - 2026-04-11
+  - 2026-05-01
+  - 2026-07-25
+  - 2026-08-02
+  - 2026-08-15
+  - 2026-08-31
+  - 2026-09-15
+  - 2026-12-01
+  - 2026-12-25
+
+# --- Retención del 2 % de renta (art. 6 c) ---
+retencion_renta:
+  porcentaje: 2
+  monto_minimo: null                      # PEDIR AL PGF: desde qué monto aplica. Vacío = se verifica solo si la fila trae retención
 
 # --- Categorías (cuentas) autorizadas para caja chica ---
 categorias_permitidas:
@@ -46,19 +79,27 @@ categorias_permitidas:
   - Materiales de oficina
   - Parqueos y peajes
   - Transporte
+  - Comisiones bancarias
   - Otros gastos menores
 
-# --- Conceptos prohibidos: si aparecen en la descripción o proveedor se marca ALTA ---
+# --- Compras que no proceden por caja chica (arts. 3 b-d, 6 a) ---
 conceptos_prohibidos:
+  - bien inmueble
+  - terreno
+  - compra de lote
+  - compra de vehículo
+  - compra de vehiculo
+  - motocicleta
+  - bicicleta eléctrica
+  - equipo de transporte
   - licor
   - cerveza
   - vino
-  - alcohol
+  - bebida alcohólica
   - cigarr
   - tabaco
   - lotería
   - apuesta
-  - casino
   - propina
   - adelanto de salario
   - préstamo
@@ -68,7 +109,7 @@ conceptos_prohibidos:
   - infracción
   - uso personal
 
-# --- Conceptos que requieren justificación adicional (se marcan MEDIA) ---
+# --- Requieren justificación (gasto menor, indispensable e impostergable) ---
 conceptos_sensibles:
   - restaurante
   - bar
@@ -80,48 +121,121 @@ conceptos_sensibles:
   - hotel
   - obsequio
   - regalo
-  - electrónico
-  - software
   - suscripción
-  - activo
+  - caso fortuito
+  - fuerza mayor
 
-# --- Comprobantes ---
+# --- Unidades técnicas especializadas (arts. 7, 7 bis, 7 ter) ---
+# Si la descripción coincide, la factura debe traer el aval de la UTE (columna "Aval UTE").
+# Las palabras son un punto de partida: AJUSTAR con las restricciones vigentes de cada UTE.
+restricciones_ute:
+  DTIC: [computadora, laptop, portátil, tablet, impresora, software, licencia, servidor, router, disco duro, monitor]
+  Prodemi: [construcción, remodelación, obra, cemento, varilla, techo, instalación eléctrica, cielo raso]
+  STI: [llanta, repuesto de vehículo, mantenimiento de vehículo, batería de vehículo]
+  PDRH: [capacitación, curso, inscripción, uniforme]
+  PPI: [impresión de, publicación, folleto, afiche, libro, rótulo]
+  Proveeduría: [mobiliario, escritorio, archivero, estante]
+  Regencia Química: [reactivo, químico, ácido, solvente]
+  UNA-Campus Sostenible: [desechable, estereofón, plástico de un solo uso, pajilla]
+  Relaciones Públicas: [publicidad, pauta, anuncio, artículo promocional, souvenir]
+  Seguridad Institucional: [cámara de seguridad, cerradura, alarma, extintor]
+  Activos fijos: [activo fijo, electrodoméstico, equipo de laboratorio, equipo audiovisual]
+
+# --- Comprobantes (art. 6 d, art. 10) ---
 comprobantes:
-  exigir_factura_electronica: true        # CR: clave numérica de 50 dígitos
+  exigir_factura_electronica: true        # clave numérica de 50 dígitos validada por Hacienda
+  exigir_codigo_ife: true                 # código IFE de Sigesa
   tipos_documento_aceptados: ["01"]       # 01 = Factura electrónica. 04 = Tiquete (no trae datos del receptor)
-  tasas_iva_validas: [0, 1, 2, 4, 13]     # % de IVA válidos en Costa Rica
-  tolerancia_calculo: 5                    # colones de tolerancia en subtotal + IVA = total
+  tasas_iva_validas: [0, 1, 2, 4, 13]
+  tolerancia_calculo: 5
 
-# --- Señales de riesgo de baja severidad ---
 alertas:
   marcar_fin_de_semana: true
-  marcar_montos_redondos: true            # múltiplos exactos de 5 000 (posible factura "armada")
+  marcar_montos_redondos: true
   monto_redondo_multiplo: 5000
 
-# --- Artículo de la política que respalda cada regla (aparece en el informe de incumplimientos) ---
-# Complete con el número de artículo / sección de su reglamento. Ej.: EXCEDE_LIMITE: "Art. 8 — Monto máximo por gasto"
+# --- Artículo que respalda cada control ---
 referencias_politica:
-  SIN_DATOS_INSTITUCION: ""
-  RECEPTOR_INCORRECTO: ""
-  TIPO_DOCUMENTO: ""
-  SIN_CLAVE: ""
-  EXCEDE_LIMITE: ""
-  GASTO_PROHIBIDO: ""
-  CATEGORIA_NO_AUTORIZADA: ""
-  FACTURA_VENCIDA: ""
-  FRACCIONAMIENTO: ""
-  DUPLICADO_EXACTO: ""
-  SIN_AUTORIZACION: ""
-  APROBADOR_NO_AUTORIZADO: ""
-  CONFLICTO_INTERES: ""
-  FALTANTE_ARQUEO: ""
-  VALE_VENCIDO: ""
+  SIN_DATOS_INSTITUCION: "Art. 6 d — a nombre de la Universidad Nacional"
+  RECEPTOR_INCORRECTO: "Art. 6 d — a nombre de la Universidad Nacional"
+  NOMBRE_RECEPTOR_DIFERENTE: "Art. 6 d"
+  COMPROBANTE_INCOMPLETO: "Art. 6 d — requisitos de la factura"
+  TIPO_DOCUMENTO: "Art. 6 d — factura electrónica validada"
+  SIN_CLAVE: "Art. 6 d — factura electrónica validada"
+  CLAVE_INVALIDA: "Art. 6 d — factura electrónica validada"
+  CLAVE_ILEGIBLE: "Art. 6 d"
+  INCONSISTENCIA_CLAVE: "Art. 6 d / art. 22 (alteración, si se confirma)"
+  SIN_IFE: "Art. 6 d — código IFE (Sigesa)"
+  ERROR_CALCULO: "Art. 6 d — valor e IVA"
+  TASA_IVA: "Art. 6 d — IVA cobrado"
+  EXCEDE_LIMITE: "Arts. 3 y 6 a — monto máximo de caja chica"
+  FRACCIONAMIENTO: "Arts. 3 y 6 a — fragmentación ilícita"
+  GASTO_PROHIBIDO: "Arts. 3 b, c, d y 6 a — naturaleza de la compra"
+  CATEGORIA_NO_AUTORIZADA: "Arts. 3 b, c, d y 6 a"
+  REQUIERE_JUSTIFICACION: "Art. 3 — gasto menor, indispensable e impostergable"
+  REQUIERE_AVAL_UTE: "Arts. 7, 7 bis y 7 ter — avales de UTE"
+  SIN_DECISION_INICIAL: "Art. 6 c — decisión inicial firmada"
+  RETENCION_RENTA: "Art. 6 c — retención del 2 % de renta"
+  SIN_ESTADO_CUENTA: "Art. 6 c — estado de cuenta en liquidaciones"
+  SIN_DEVOLUCION: "Art. 6 c — devoluciones de efectivo en liquidaciones"
+  MOVIMIENTO_NO_CONCILIADO: "Art. 11 h — movimientos bancarios coinciden con las compras"
+  GASTO_EXTRANJERO_INCOMPLETO: "Art. 10 — gastos en el extranjero"
+  DUPLICADO_EXACTO: "Art. 6 d / art. 22 (comprobante que no corresponde, si se confirma)"
+  POSIBLE_DUPLICADO: "Art. 6 d"
+  FACTURA_VENCIDA: "Arts. 8, 14, 15, 17 y 18 — plazos"
+  PLAZO_REINTEGRO: "Arts. 8, 14, 15, 17 y 18 — reintegro al 5.º día hábil"
+  PLAZO_LIQUIDACION_FINAL: "Arts. 8, 14, 15, 17 y 18 — calendario de cierre"
+  VALE_VENCIDO: "Arts. 8, 14, 15, 17 y 18 — vales en 5 días hábiles"
+  FALTANTE_ARQUEO: "Arts. 12 c y 17 — faltantes cubiertos el mismo día"
+  SOBRANTE_ARQUEO: "Arts. 12 c y 17 — sobrantes al día hábil siguiente"
+  PENDIENTE_YA_LIQUIDADO: "Art. 12 c — concordancia de justificantes"
+  ARQUEO_NO_INDEPENDIENTE: "Arts. 14 y 17 — arqueos por la persona responsable o el PGF"
+  SIN_ARQUEO_RECIENTE: "Arts. 14 y 17 — arqueos periódicos"
+  FONDO_DIFERENTE: "Art. 12 c — concordancia con el monto asignado"
+  SIN_AUTORIZACION: "Art. 6 c — decisión inicial del titular subordinado"
+  APROBADOR_NO_AUTORIZADO: "Art. 6 c — decisión inicial del titular subordinado"
+  CONFLICTO_INTERES: "Art. 21 (otras faltas) — verificar"
+  CAJA_NO_REGISTRADA: "Arts. 4 y 5 — apertura formal"
+  CAJA_INACTIVA: "Arts. 4 y 5"
+  CUSTODIO_NO_AUTORIZADO: "Arts. 4 y 5 — persona encargada registrada"
+  FACTURA_RECHAZADA_HACIENDA: "Art. 6 d — factura validada por Hacienda"
+  XML_NO_COINCIDE: "Art. 6 d / art. 22 (alteración, si se confirma)"
+  SIN_RESPALDO_XML: "Art. 6 d — factura electrónica validada"
+  AUTOAPROBACION: "Art. 6 c — decisión inicial del titular subordinado"
+  DIFERENCIA_REINTEGRO: "Art. 12 c — concordancia de montos"
+  EXCEDE_FONDO: "Art. 12 c — concordancia con el monto asignado"
+  FUERA_DE_PERIODO: "Art. 6 d — fechas dentro del período"
+  FECHA_FUTURA: "Art. 6 d — fecha de emisión"
+  MONTO_INVALIDO: "Art. 6 d — valor del bien o servicio"
+  SIN_CUSTODIO: "Arts. 4 y 5 — persona encargada"
 
-# --- Normas que requieren criterio (Claude las revisa al leer cada liquidación) ---
-# Copie aquí las cláusulas de la política que no se pueden reducir a un número o una palabra clave.
-reglas_cualitativas: []
-#  - "Los gastos de alimentación solo proceden para reuniones con personas externas a la compañía."
-#  - "No se permite adquirir activos (equipo, mobiliario) por caja chica."
+# --- Gravedad sugerida (arts. 19–23). Solo es una sugerencia: la valoración final es de los órganos competentes (art. 23) ---
+gravedad:
+  leve: [GASTO_PROHIBIDO, CATEGORIA_NO_AUTORIZADA, EXCEDE_LIMITE, REQUIERE_AVAL_UTE, SIN_DATOS_INSTITUCION,
+         RECEPTOR_INCORRECTO, TIPO_DOCUMENTO, SIN_CLAVE, CLAVE_INVALIDA, SIN_IFE, COMPROBANTE_INCOMPLETO,
+         SIN_DECISION_INICIAL, SIN_AUTORIZACION, APROBADOR_NO_AUTORIZADO, FACTURA_VENCIDA, PLAZO_REINTEGRO,
+         VALE_VENCIDO, SIN_ESTADO_CUENTA, SIN_DEVOLUCION, GASTO_EXTRANJERO_INCOMPLETO, SIN_RESPALDO_XML,
+         ERROR_CALCULO, TASA_IVA, AUTOAPROBACION, FUERA_DE_PERIODO, FECHA_FUTURA, DIFERENCIA_REINTEGRO,
+         SOBRANTE_ARQUEO, FONDO_DIFERENTE, ARQUEO_NO_INDEPENDIENTE, CAJA_NO_REGISTRADA, CUSTODIO_NO_AUTORIZADO,
+         NOMBRE_RECEPTOR_DIFERENTE, CLAVE_ILEGIBLE, SIN_CUSTODIO, SIN_ARQUEO_RECIENTE]
+  grave: [PLAZO_LIQUIDACION_FINAL, RETENCION_RENTA, FALTANTE_ARQUEO, FRACCIONAMIENTO, PENDIENTE_YA_LIQUIDADO,
+          CONFLICTO_INTERES, FACTURA_RECHAZADA_HACIENDA, MOVIMIENTO_NO_CONCILIADO, EXCEDE_FONDO, CAJA_INACTIVA]
+  muy_grave: [DUPLICADO_EXACTO, INCONSISTENCIA_CLAVE, XML_NO_COINCIDE]
+  reincidencia_dias: 90                   # leve repetida en 3 meses -> grave; grave repetida -> muy grave
+
+# --- Normas que requieren criterio (las revisa Claude al leer cada liquidación) ---
+reglas_cualitativas:
+  - "Art. 3: el gasto es menor, indispensable e impostergable y está ligado a la operación diaria de la unidad."
+  - "Art. 3: las compras por caso fortuito o fuerza mayor traen evidencia."
+  - "Art. 6 d: la factura no presenta alteraciones físicas (revisar el PDF o la foto)."
+  - "Art. 6 d: proveedores no inscritos solo con visto bueno excepcional y justificación de la Dirección del PGF."
+  - "Art. 6 d: comisiones bancarias por retiro de efectivo incluidas en el reintegro cuando corresponda."
+
+# --- Proveedores: comprobantes electrónicos (PDF + XML + respuesta de Hacienda) ---
+proveedores:
+  dias_espera_completar: 5                # días que se espera a que llegue el resto de archivos de una factura
+  exigir_proveedor_aprobado: true         # el emisor debe estar aprobado en config/Proveedores.xlsx
+  tolerancia_monto: 1                     # colones de diferencia aceptada entre PDF, XML y respuesta
 
 # --- Dashboard publicado (acceso con registro obligatorio) ---
 dashboard:
