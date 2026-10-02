@@ -26,14 +26,16 @@ ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 API_TOKEN = os.environ.get("API_TOKEN", "")
 
-# Almacenamiento de archivos: "drive" (Google Drive) o "local" (disco o volumen de Railway)
-ALMACEN = os.environ.get("ALMACEN", "drive" if os.environ.get("DRIVE_FACTURAS_FOLDER_ID") else "local")
 STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", str(RAIZ / "data" / "portal_archivos")))
 DRIVE_FACTURAS_FOLDER_ID = os.environ.get("DRIVE_FACTURAS_FOLDER_ID", "")
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
 GOOGLE_OAUTH_REFRESH_TOKEN = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")
+
+# Almacenamiento: Google Drive solo si hay carpeta Y credenciales; si no, disco (o volumen de Railway)
+_credenciales_google = bool(GOOGLE_OAUTH_REFRESH_TOKEN or GOOGLE_SERVICE_ACCOUNT_JSON)
+ALMACEN = os.environ.get("ALMACEN", "drive" if DRIVE_FACTURAS_FOLDER_ID and _credenciales_google else "local")
 
 MAX_PDF_MB = float(os.environ.get("MAX_PDF_MB", "5"))
 MAX_XML_KB = float(os.environ.get("MAX_XML_KB", "500"))
